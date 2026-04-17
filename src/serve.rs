@@ -43,9 +43,7 @@ pub fn router(state: AppState) -> Router {
         .route("/cert", get(serve_cert))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
-        .with_state(state);
-
-        router
+        .with_state(state)
 }
 
 /// Minimal HTTP router for VLC — file serving and playlists only, no TLS required
