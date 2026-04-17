@@ -11,7 +11,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use tower::ServiceExt;
-use tower_http::{cors::CorsLayer, services::{ServeDir, ServeFile}, trace::TraceLayer};
+use tower_http::{cors::CorsLayer, services::ServeFile, trace::TraceLayer};
 
 use crate::{
     cache::MediaCache,
@@ -45,13 +45,23 @@ pub fn router(state: AppState) -> Router {
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 
-    // When svelte feature is enabled, serve ui/svelte/dist/ for unmatched routes
     #[cfg(feature = "svelte")]
-    let router = router.fallback_service(
-        ServeDir::new("ui/svelte/dist").append_index_html_on_directories(true)
-    );
+    let router = svelte_ui::attach(router);
 
     router
+}
+
+#[cfg(feature = "svelte")]
+mod svelte_ui {
+    use axum::Router;
+    use tower_http::services::ServeDir;
+    use super::AppState;
+
+    pub fn attach(router: Router<AppState>) -> Router<AppState> {
+        router.fallback_service(
+            ServeDir::new("ui/svelte/dist").append_index_html_on_directories(true)
+        )
+    }
 }
 
 /// Minimal HTTP router for VLC — file serving and playlists only, no TLS required
