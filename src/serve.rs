@@ -119,8 +119,12 @@ async fn play_xspf(
     let m = get_media_or_404(&state.pool, &id).await?;
     let base_url = base_url(&state.config);
     let playlist = vlc::xspf(&[m], &base_url);
+    let disposition = format!("attachment; filename=\"{}.xspf\"", m.title);
     Ok((
-        [(header::CONTENT_TYPE, "application/xspf+xml")],
+        [
+            (header::CONTENT_TYPE, "application/xspf+xml"),
+            (header::CONTENT_DISPOSITION, disposition.as_str()),
+        ],
         playlist,
     ).into_response())
 }
