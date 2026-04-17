@@ -47,11 +47,24 @@
     return (bytes / 1e6).toFixed(0) + ' MB';
   }
   function copyUrl(btn, url) {
-    navigator.clipboard.writeText(url).then(() => {
-      btn.textContent = '✓ Copied';
-      btn.classList.add('copied');
-      setTimeout(() => { btn.textContent = '⎘ Copy URL'; btn.classList.remove('copied'); }, 2000);
-    });
+    // clipboard API requires HTTPS — fallback for plain HTTP LAN
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(url).then(() => flash(btn));
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = url;
+      ta.style.cssText = 'position:fixed;opacity:0';
+      document.body.appendChild(ta);
+      ta.focus(); ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      flash(btn);
+    }
+  }
+  function flash(btn) {
+    btn.textContent = '✓ Copied';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = '⎘ Copy URL'; btn.classList.remove('copied'); }, 2000);
   }
   async function doSearch() {
     const q = document.getElementById('q').value.trim();
