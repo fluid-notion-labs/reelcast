@@ -16,7 +16,8 @@ use serve::AppState;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let config = Config::parse();
+    let mut config = Config::parse();
+    config.resolve_tls();
 
     tracing_subscriber::fmt()
         .with_env_filter(&config.log_level)

@@ -40,6 +40,21 @@ pub struct Config {
 }
 
 impl Config {
+    /// Resolve cert/key — explicit flags win, then auto-detect ~/.config/reelcast/
+    pub fn resolve_tls(&mut self) {
+        if self.cert.is_none() && self.key.is_none() {
+            let base = dirs_next::config_dir()
+                .unwrap_or_else(|| std::path::PathBuf::from("~/.config"))
+                .join("reelcast");
+            let cert = base.join("cert.pem");
+            let key  = base.join("key.pem");
+            if cert.exists() && key.exists() {
+                self.cert = Some(cert);
+                self.key  = Some(key);
+            }
+        }
+    }
+
     pub fn tls_enabled(&self) -> bool {
         self.cert.is_some() && self.key.is_some()
     }
