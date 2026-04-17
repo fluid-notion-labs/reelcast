@@ -7,7 +7,7 @@ KEY="${CERT_DIR}/key.pem"
 
 usage() {
   cat << EOF
-Usage: scripts/plz <command>
+Usage: scripts/gencert <command>
 
 Commands:
   tls           Generate self-signed cert (prompts for LAN IP)
@@ -48,12 +48,12 @@ cmd_tls() {
   echo "  cert: $CERT"
   echo "  key:  $KEY"
   echo ""
-  echo "Run 'scripts/plz trust' for macOS trust instructions."
+  echo "Run 'scripts/gencert trust' for macOS trust instructions."
 }
 
 cmd_trust() {
   if [[ ! -f "$CERT" ]]; then
-    echo "No cert found at $CERT — run 'scripts/plz tls' first." >&2
+    echo "No cert found at $CERT — run 'scripts/gencert tls' first." >&2
     exit 1
   fi
 
@@ -88,7 +88,7 @@ cmd_run() {
     tls_args=(--cert "$CERT" --key "$KEY")
     echo "TLS enabled — https"
   else
-    echo "No cert found — running plain HTTP (run 'scripts/plz tls' to enable HTTPS)"
+    echo "No cert found — running plain HTTP (run 'scripts/gencert tls' to enable HTTPS)"
   fi
   cargo run --release -- "${tls_args[@]}" "$@"
 }
