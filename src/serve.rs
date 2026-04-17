@@ -11,7 +11,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use tower::ServiceExt;
-use tower_http::{cors::CorsLayer, services::ServeFile, trace::TraceLayer};
+use tower_http::{cors::CorsLayer, services::{ServeDir, ServeFile}, trace::TraceLayer};
 
 use crate::{
     cache::MediaCache,
@@ -43,7 +43,15 @@ pub fn router(state: AppState) -> Router {
         .route("/cert", get(serve_cert))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
-        .with_state(state)
+        .with_state(state);
+
+    // When svelte feature is enabled, serve ui/svelte/dist/ for unmatched routes
+    #[cfg(feature = "svelte")]
+    let router = router.fallback_service(
+        ServeDir::new("ui/svelte/dist").append_index_html_on_directories(true)
+    );
+
+    router
 }
 
 /// Minimal HTTP router for VLC — file serving and playlists only, no TLS required
@@ -62,9 +70,7 @@ async fn health() -> impl IntoResponse {
 }
 
 async fn index() -> impl IntoResponse {
-    // Inject the FEATURE_PLAYER constant based on Rust compile-time feature flag.
-    // Replaces the placeholder in index.html so the JS picks it up.
-    let html = include_str!("index.html")
+    let html = include_str!("../ui/vanilla/index.html")
         .replace(
             "const FEATURE_PLAYER = false;",
             if cfg!(feature = "media-player") { "const FEATURE_PLAYER = true;" }
@@ -79,7 +85,7 @@ async fn index() -> impl IntoResponse {
 }
 
 async fn setup_page() -> impl IntoResponse {
-    axum::response::Html(include_str!("setup.html"))
+    axum::response::Html(include_str!("../ui/vanilla/setup.html"))
 }
 
 async fn serve_cert(State(state): State<AppState>) -> Result<Response> {

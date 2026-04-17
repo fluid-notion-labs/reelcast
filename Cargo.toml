@@ -8,6 +8,7 @@ description = "Zero-copy local media server with VLC client support"
 default = ["media-player"]
 media-player = []
 vlc = []
+svelte = []  # serve ui/svelte/dist instead of ui/vanilla
 
 [[bin]]
 name = "reelcast"
