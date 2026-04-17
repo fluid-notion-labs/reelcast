@@ -36,6 +36,8 @@ pub fn router(state: AppState) -> Router {
         .route("/playlist/:id", get(play_m3u))
         .route("/file/:id", get(serve_file))
         .route("/health", get(health))
+        .route("/setup", get(setup_page))
+        .route("/cert", get(serve_cert))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
@@ -187,6 +189,23 @@ async fn serve_file(
         .await
         .map(|r| r.map(axum::body::Body::new).into_response())
         .map_err(|e| ReelcastError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))
+}
+
+async fn setup_page() -> impl IntoResponse {
+    axum::response::Html(include_str!("setup.html"))
+}
+
+async fn serve_cert(State(state): State<AppState>) -> Result<Response> {
+    let cert_path = state.config.cert.as_ref()
+        .ok_or_else(|| ReelcastError::Scanner("No cert configured".into()))?;
+    let bytes = tokio::fs::read(cert_path).await?;
+    Ok((
+        [
+            (axum::http::header::CONTENT_TYPE, "application/x-pem-file"),
+            (axum::http::header::CONTENT_DISPOSITION, "attachment; filename="reelcast.pem""),
+        ],
+        bytes,
+    ).into_response())
 }
 
 async fn get_media_or_404(pool: &SqlitePool, id: &str) -> Result<MediaFile> {

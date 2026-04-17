@@ -53,6 +53,10 @@
 <body>
 <h1>Reel<span>cast</span></h1>
 
+<div id="https-banner" style="display:none;background:#1c1408;border:1px solid #78350f;border-radius:6px;padding:0.6rem 1rem;margin-bottom:1rem;font-size:0.85rem;color:#fbbf24">
+  ⚠️ Running on HTTP — <strong>Copy URL</strong> won't work. <a href="/setup" style="color:#f97316;font-weight:600">Set up HTTPS →</a>
+</div>
+
 <div id="search-bar">
   <input id="q" type="text" placeholder="Search movies…" autofocus>
   <button class="search-btn" onclick="doSearch()">Search</button>
@@ -171,6 +175,11 @@
     document.getElementById('status').textContent = `${items.length} result${items.length !== 1 ? 's' : ''}`;
     document.getElementById('results-title').style.display = items.length ? 'block' : 'none';
     document.getElementById('results').innerHTML = items.map(cardHtml).join('');
+  }
+
+  // ── HTTPS banner ─────────────────────────────────────────────────────────
+  if (location.protocol === 'http:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+    document.getElementById('https-banner').style.display = 'block';
   }
 
   // ── Init ──────────────────────────────────────────────────────────────────
