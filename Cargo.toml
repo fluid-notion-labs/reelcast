@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2021"
 description = "Zero-copy local media server with VLC client support"
 
+[features]
+default = []
+media-player = []
+
 [[bin]]
 name = "reelcast"
 path = "src/main.rs"

@@ -62,7 +62,17 @@ async fn health() -> impl IntoResponse {
 }
 
 async fn index() -> impl IntoResponse {
-    axum::response::Html(include_str!("index.html"))
+    // Inject the FEATURE_PLAYER constant based on Rust compile-time feature flag.
+    // Replaces the placeholder in index.html so the JS picks it up.
+    let html = include_str!("index.html").replace(
+        "const FEATURE_PLAYER = false;",
+        if cfg!(feature = "media-player") {
+            "const FEATURE_PLAYER = true;"
+        } else {
+            "const FEATURE_PLAYER = false;"
+        },
+    );
+    axum::response::Html(html)
 }
 
 async fn setup_page() -> impl IntoResponse {
