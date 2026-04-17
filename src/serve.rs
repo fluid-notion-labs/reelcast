@@ -90,13 +90,13 @@ struct MediaItem {
 }
 
 impl MediaItem {
-    fn from_media(m: &MediaFile, base_url: &str) -> Self {
+    fn from_media(m: &MediaFile, base_url: &str, file_base: &str) -> Self {
         let resolution = match (m.width, m.height) {
             (Some(w), Some(h)) => Some(format!("{}x{}", w, h)),
             _ => None,
         };
         Self {
-            file_url: format!("{}/file/{}", base_url, m.id),
+            file_url: format!("{}/file/{}", file_base, m.id),
             play_url: format!("{}/play/{}", base_url, m.id),
             playlist_url: format!("{}/playlist/{}", base_url, m.id),
             id: m.id.clone(),
@@ -122,7 +122,8 @@ struct RecentItem {
 async fn list_media(State(state): State<AppState>) -> Result<impl IntoResponse> {
     let base_url = base_url(&state.config);
     let files = state.media_cache.get().await;
-    let items: Vec<_> = files.iter().map(|m| MediaItem::from_media(m, &base_url)).collect();
+    let file_base = file_base_url(&state.config);
+    let items: Vec<_> = files.iter().map(|m| MediaItem::from_media(m, &base_url, &file_base)).collect();
     Ok(Json(items))
 }
 
@@ -132,15 +133,16 @@ async fn search(
 ) -> Result<impl IntoResponse> {
     let base_url = base_url(&state.config);
     let files = state.media_cache.get().await;
+    let file_base = file_base_url(&state.config);
     let items: Vec<_> = match params.q.as_deref().filter(|q| !q.is_empty()) {
         Some(q) => {
             let q_lower = q.to_lowercase();
             files.iter()
                 .filter(|m| m.title.to_lowercase().contains(&q_lower))
-                .map(|m| MediaItem::from_media(m, &base_url))
+                .map(|m| MediaItem::from_media(m, &base_url, &file_base))
                 .collect()
         }
-        None => files.iter().map(|m| MediaItem::from_media(m, &base_url)).collect(),
+        None => files.iter().map(|m| MediaItem::from_media(m, &base_url, &file_base)).collect(),
     };
     Ok(Json(items))
 }
@@ -148,8 +150,9 @@ async fn search(
 async fn recent_played(State(state): State<AppState>) -> Result<impl IntoResponse> {
     let base_url = base_url(&state.config);
     let rows = db::recent_plays(&state.pool, 20).await?;
+    let file_base = file_base_url(&state.config);
     let items: Vec<_> = rows.into_iter().map(|r| RecentItem {
-        file_url: format!("{}/file/{}", base_url, r.media_id),
+        file_url: format!("{}/file/{}", file_base, r.media_id),
         play_url: format!("{}/play/{}", base_url, r.media_id),
         media_id: r.media_id,
         title: r.title,
@@ -231,4 +234,13 @@ fn base_url(config: &Config) -> String {
         .map(|ip| ip.to_string())
         .unwrap_or_else(|| config.host.clone());
     format!("{}://{}:{}", config.scheme(), host, config.port)
+}
+
+/// File URLs always use plain HTTP — VLC doesn't trust self-signed certs.
+/// The browser UI can be HTTPS (for clipboard API), VLC streams over HTTP.
+fn file_base_url(config: &Config) -> String {
+    let host = crate::net::local_ip()
+        .map(|ip| ip.to_string())
+        .unwrap_or_else(|| config.host.clone());
+    format!("http://{}:{}", host, config.port)
 }
