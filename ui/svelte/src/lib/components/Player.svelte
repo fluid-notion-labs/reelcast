@@ -1,7 +1,11 @@
 <script lang="ts">
   import type { MediaItem } from '$lib/types';
   import { onMount } from 'svelte';
-  import { openPlayer, playNext, cancelNext, pausePlayer, attachKeyboard, getNextItem } from '$lib/player';
+  import {
+    openPlayer, playNext, playPrev,
+    cancelNext, pausePlayer, attachKeyboard,
+    getNextItem, getPrevItem, hasPrev, hasNext,
+  } from '$lib/player';
 
   let {
     item,
@@ -14,6 +18,17 @@
   } = $props();
 
   let upNextItem = $state<MediaItem | null>(null);
+  let prevItem = $state<MediaItem | null>(null);
+  let nextItem = $state<MediaItem | null>(null);
+  let canPrev = $state(false);
+  let canNext = $state(false);
+
+  function refreshNav() {
+    prevItem = getPrevItem();
+    nextItem = getNextItem();
+    canPrev = hasPrev();
+    canNext = hasNext();
+  }
 
   function handleClose() {
     pausePlayer();
@@ -24,11 +39,12 @@
 
   function handleUpNext(next: MediaItem) {
     upNextItem = next;
+    refreshNav();
   }
 
   function handlePlayNext() {
     upNextItem = null;
-    playNext(handleUpNext);
+    playNext();
   }
 
   function handleCancelNext() {
@@ -36,23 +52,56 @@
     upNextItem = null;
   }
 
+  function handlePrev() {
+    upNextItem = null;
+    playPrev();
+  }
+
+  function handleNext() {
+    upNextItem = null;
+    playNext();
+  }
+
   $effect(() => {
     if (item) {
       upNextItem = null;
-      openPlayer(item, allItems, handleUpNext, handleClose);
+      openPlayer(item, allItems, {
+        onUpNext: handleUpNext,
+        onQueueChange: refreshNav,
+      });
+      refreshNav();
     }
   });
 
   onMount(() => {
-    attachKeyboard(handleClose, handleUpNext);
+    attachKeyboard(handleClose);
   });
 </script>
 
 <div id="player-modal" class:open={item !== null}>
-  <button class="close-btn" onclick={handleClose}>✕</button>
-  <p class="title">{item?.title ?? ''}</p>
+  <div class="top-bar">
+    <div class="nav-prev">
+      {#if canPrev && prevItem}
+        <button class="nav-btn" onclick={handlePrev} title="Previous: {prevItem.title}">
+          ⏮ <span class="nav-label">{prevItem.title}</span>
+        </button>
+      {/if}
+    </div>
+
+    <p class="title">{item?.title ?? ''}</p>
+
+    <div class="nav-next">
+      {#if canNext && nextItem}
+        <button class="nav-btn" onclick={handleNext} title="Next: {nextItem.title}">
+          <span class="nav-label">{nextItem.title}</span> ⏭
+        </button>
+      {/if}
+    </div>
+
+    <button class="close-btn" onclick={handleClose}>✕</button>
+  </div>
+
   <div class="player-wrap">
-    <!-- Plyr targets this element -->
     <video id="player" playsinline controls></video>
 
     {#if upNextItem}
@@ -71,23 +120,54 @@
 <style>
   #player-modal {
     display: none; position: fixed; inset: 0;
-    background: rgba(0,0,0,0.92); z-index: 100;
-    align-items: center; justify-content: center;
-    flex-direction: column; gap: 1rem;
+    background: rgba(0,0,0,0.95); z-index: 100;
+    flex-direction: column; gap: 0;
   }
   #player-modal.open { display: flex; }
+
+  .top-bar {
+    display: flex; align-items: center;
+    padding: 0.75rem 1rem; gap: 0.75rem;
+    background: rgba(0,0,0,0.6);
+    min-height: 3rem;
+  }
+  .title {
+    flex: 1; color: #fff; font-size: 0.95rem;
+    font-weight: 600; text-align: center;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .nav-prev, .nav-next {
+    flex: 0 0 auto; max-width: 220px;
+    overflow: hidden;
+  }
+  .nav-btn {
+    display: flex; align-items: center; gap: 0.4rem;
+    background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 6px; color: #ccc; font-size: 0.78rem;
+    padding: 0.3rem 0.6rem; cursor: pointer; white-space: nowrap;
+    max-width: 220px; overflow: hidden;
+  }
+  .nav-btn:hover { background: rgba(255,255,255,0.15); color: #fff; }
+  .nav-label {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    max-width: 160px; display: inline-block;
+  }
   .close-btn {
-    position: fixed; top: 1.2rem; right: 1.4rem;
+    flex: 0 0 auto;
     background: none; border: none; color: #888;
-    font-size: 1.6rem; cursor: pointer; line-height: 1;
+    font-size: 1.4rem; cursor: pointer; line-height: 1;
+    padding: 0.2rem 0.4rem;
   }
   .close-btn:hover { color: #fff; }
-  .title { color: #fff; font-size: 1rem; font-weight: 600; }
-  .player-wrap { width: min(90vw, 1100px); position: relative; }
-  .player-wrap :global(video) { width: 100%; border-radius: 8px; }
+
+  .player-wrap {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    position: relative; padding: 1rem;
+  }
+  .player-wrap :global(.plyr) { width: min(90vw, 1100px); }
 
   .up-next {
-    position: absolute; bottom: 4rem; right: 1rem;
+    position: absolute; bottom: 2rem; right: 1.5rem;
     background: rgba(0,0,0,0.88); border: 1px solid #333;
     border-radius: 8px; padding: 0.75rem 1rem; max-width: 260px;
   }

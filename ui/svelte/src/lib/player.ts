@@ -1,7 +1,6 @@
 import type { MediaItem } from './types';
 import { naturalSort } from './utils';
 
-// Plyr is loaded via CDN in app.html
 declare const Plyr: any;
 
 let plyr: any = null;
@@ -15,19 +14,22 @@ export function initPlyr() {
     controls: ['play-large','play','progress','current-time','duration','mute','volume','fullscreen'],
     keyboard: { focused: false, global: false },
   });
-  plyr.on('ended', showUpNext);
 }
 
 export function getPlyr() { return plyr; }
+export function getQueue() { return queue; }
+export function getQueueIdx() { return queueIdx; }
+export function hasPrev() { return queueIdx > 0; }
+export function hasNext() { return queueIdx >= 0 && queueIdx < queue.length - 1; }
+export function getCurrentItem(): MediaItem | null { return queue[queueIdx] ?? null; }
+export function getNextItem(): MediaItem | null { return hasNext() ? queue[queueIdx + 1] : null; }
+export function getPrevItem(): MediaItem | null { return hasPrev() ? queue[queueIdx - 1] : null; }
 
 export function buildQueue(item: MediaItem, items: MediaItem[]) {
-  // Group by series_key if available (cross-directory grouping for multi-season shows),
-  // otherwise fall back to exact directory match.
   const grouped = item.series_key
     ? items.filter(m => m.series_key === item.series_key)
     : items.filter(m => m.dir === item.dir);
 
-  // Sort by episode marker (S01E01) then natural filename sort
   queue = [...grouped].sort((a, b) => {
     const epA = extractEpisodeKey(a.filename);
     const epB = extractEpisodeKey(b.filename);
@@ -38,46 +40,58 @@ export function buildQueue(item: MediaItem, items: MediaItem[]) {
   queueIdx = queue.findIndex(m => m.id === item.id);
 }
 
-/// Extract a sortable episode key from filename, e.g. "S01E03" → "01 03"
-/// Falls back to full filename for natural sort.
 function extractEpisodeKey(filename: string): string | null {
   const m = filename.match(/[Ss](\d{1,2})[Ee](\d{1,2})/);
   if (m) return `${m[1].padStart(2,'0')} ${m[2].padStart(2,'0')}`;
   return null;
 }
 
-export function openPlayer(item: MediaItem, allItems: MediaItem[], onUpNext: (next: MediaItem) => void, onClose?: () => void) {
-  initPlyr();
-  buildQueue(item, allItems);
+type QueueCallbacks = {
+  onUpNext: (next: MediaItem) => void;
+  onQueueChange: () => void; // called when idx changes so UI can re-render nav buttons
+};
+
+let callbacks: QueueCallbacks | null = null;
+
+function playAtIdx(idx: number) {
+  if (idx < 0 || idx >= queue.length) return;
+  cancelNext();
+  queueIdx = idx;
+  const item = queue[queueIdx];
   plyr.source = { type: 'video', sources: [{ src: item.file_url_https }] };
   plyr.play();
-
   plyr.off('ended');
-  plyr.on('ended', () => showUpNext(onUpNext));
+  plyr.on('ended', () => showUpNext());
+  callbacks?.onQueueChange();
 }
 
-export function playNext(onUpNext: (next: MediaItem) => void) {
-  cancelNext();
-  if (queueIdx < queue.length - 1) {
-    queueIdx++;
-    const next = queue[queueIdx];
-    plyr.source = { type: 'video', sources: [{ src: next.file_url_https }] };
-    plyr.play();
-    plyr.off('ended');
-    plyr.on('ended', () => showUpNext(onUpNext));
+export function openPlayer(item: MediaItem, allItems: MediaItem[], cb: QueueCallbacks) {
+  initPlyr();
+  callbacks = cb;
+  buildQueue(item, allItems);
+  playAtIdx(queueIdx);
+}
+
+export function playNext() {
+  if (hasNext()) playAtIdx(queueIdx + 1);
+}
+
+export function playPrev() {
+  // If >3s in, restart current; otherwise go to previous
+  if (plyr && plyr.currentTime > 3) {
+    plyr.currentTime = 0;
+    callbacks?.onQueueChange();
+  } else if (hasPrev()) {
+    playAtIdx(queueIdx - 1);
   }
 }
 
-export function getNextItem(): MediaItem | null {
-  return queueIdx >= 0 && queueIdx < queue.length - 1 ? queue[queueIdx + 1] : null;
-}
-
-function showUpNext(onUpNext: (next: MediaItem) => void) {
+function showUpNext() {
   cancelNext();
   const next = getNextItem();
   if (!next) return;
-  onUpNext(next);
-  nextTimer = setTimeout(() => playNext(onUpNext), 8000);
+  callbacks?.onUpNext(next);
+  nextTimer = setTimeout(() => playNext(), 8000);
 }
 
 export function cancelNext() {
@@ -88,8 +102,7 @@ export function pausePlayer() {
   plyr?.pause();
 }
 
-// VLC-style keyboard handler — attach once globally
-export function attachKeyboard(onClose: () => void, onUpNext: (next: MediaItem) => void) {
+export function attachKeyboard(onClose: () => void) {
   window.addEventListener('keydown', (e) => {
     if (!plyr) return;
     const modal = document.getElementById('player-modal');
@@ -98,7 +111,7 @@ export function attachKeyboard(onClose: () => void, onUpNext: (next: MediaItem) 
 
     const cur = plyr.currentTime;
     switch (true) {
-      case e.key === ' ':               e.preventDefault(); plyr.togglePlay(); break;
+      case e.key === ' ':                e.preventDefault(); plyr.togglePlay(); break;
       case e.key === 'f' || e.key==='F': plyr.fullscreen.toggle(); break;
       case e.key === 'm' || e.key==='M': plyr.muted = !plyr.muted; break;
       case e.shiftKey && e.key==='ArrowLeft':  e.preventDefault(); plyr.currentTime = Math.max(0,cur-3); break;
@@ -109,6 +122,9 @@ export function attachKeyboard(onClose: () => void, onUpNext: (next: MediaItem) 
       case !e.shiftKey&&!e.altKey&&!e.ctrlKey&&!e.metaKey&&e.key==='ArrowRight': e.preventDefault(); plyr.currentTime = cur+10; break;
       case e.key==='ArrowUp':   e.preventDefault(); plyr.volume = Math.min(1,plyr.volume+0.1); break;
       case e.key==='ArrowDown': e.preventDefault(); plyr.volume = Math.max(0,plyr.volume-0.1); break;
+      // Queue navigation
+      case e.key==='n' || e.key==='N':   e.preventDefault(); playNext(); break;
+      case e.key==='p' || e.key==='P':   e.preventDefault(); playPrev(); break;
       case e.key==='Escape': onClose(); break;
     }
   });
