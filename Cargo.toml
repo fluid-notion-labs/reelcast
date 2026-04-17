@@ -5,7 +5,7 @@ edition = "2021"
 description = "Zero-copy local media server with VLC client support"
 
 [features]
-default = ["media-player"]
+default = ["media-player", "svelte"]
 media-player = []
 vlc = []
 svelte = []  # build.rs runs npm run build in ui/svelte/, embedded via rust-embed
