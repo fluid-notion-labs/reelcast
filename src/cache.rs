@@ -23,6 +23,7 @@ impl MediaCache {
         *self.0.write().await = Arc::new(files);
     }
 
+    #[allow(dead_code)]
     pub async fn is_empty(&self) -> bool {
         self.0.read().await.is_empty()
     }

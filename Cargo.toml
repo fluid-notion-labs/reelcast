@@ -5,9 +5,10 @@ edition = "2021"
 description = "Zero-copy local media server with VLC client support"
 
 [features]
-default = ["media-player"]
+default = ["media-player", "svelte"]
 media-player = []
 vlc = []
+svelte = []  # build.rs runs npm run build in ui/svelte/, embedded via rust-embed
 
 [[bin]]
 name = "reelcast"
@@ -21,11 +22,14 @@ tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["io"] }
 tower = { version = "0.4", features = ["util"] }
 
-# DB — native-tls avoids ring/rustls/zstd chain
-sqlx = { version = "0.7", features = ["sqlite", "runtime-tokio-native-tls", "migrate"] }
+# TLS
+tokio-rustls = "0.24"
+rustls-pemfile = "1"
+hyper = { version = "1", features = ["http1", "http2"] }
+hyper-util = { version = "0.1", features = ["tokio", "server-auto"] }
 
-# Search — tantivy deferred; SQLite LIKE covers MVP
-# tantivy = "..."
+# DB
+sqlx = { version = "0.7", features = ["sqlite", "runtime-tokio-native-tls", "migrate"] }
 
 # CLI
 clap = { version = "4", features = ["derive", "env"] }
@@ -51,8 +55,8 @@ uuid = { version = "1", features = ["v4"] }
 percent-encoding = "2"
 regex-lite = "0.1"
 dirs-next = "2"
-# TLS via tokio-rustls directly
-tokio-rustls = "0.24"
-rustls-pemfile = "1"
-hyper = { version = "1", features = ["http1", "http2"] }
-hyper-util = { version = "0.1", features = ["tokio", "server-auto"] }
+rust-embed = { version = "8", features = ["debug-embed"] }
+mime_guess = "2"
+
+[build-dependencies]
+# build.rs uses std only — no extra deps needed

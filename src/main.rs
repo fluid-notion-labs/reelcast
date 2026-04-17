@@ -1,4 +1,5 @@
 mod cache;
+mod ui;
 mod config;
 mod db;
 mod error;
@@ -62,6 +63,7 @@ async fn main() -> anyhow::Result<()> {
         config: Arc::new(config.clone()),
     };
 
+    log_ui_info();
     print_urls(&config);
 
     if config.tls_enabled() {
@@ -89,6 +91,20 @@ async fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn log_ui_info() {
+
+
+    let feature = if cfg!(feature = "svelte") { "svelte" } else { "vanilla" };
+    let files: Vec<_> = crate::ui::Assets::iter().collect();
+    info!("UI: {} ({} embedded files)", feature, files.len());
+    for f in &files {
+        tracing::debug!("  embedded: {}", f);
+    }
+    if files.is_empty() {
+        tracing::warn!("⚠️  No UI files embedded — dist/ may be empty. Run: cargo build --features svelte");
+    }
 }
 
 fn print_urls(config: &Config) {
