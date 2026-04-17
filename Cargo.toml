@@ -19,7 +19,7 @@ path = "src/main.rs"
 axum = { version = "0.7", features = ["http2", "macros"] }
 tower-http = { version = "0.5", features = ["fs", "trace", "cors"] }
 tokio = { version = "1", features = ["full"] }
-tokio-util = { version = "0.7", features = ["io"] }
+axum = { version = "0.7", features = ["http2", "macros"] }
 tower = { version = "0.4", features = ["util"] }
 
 # TLS
@@ -57,6 +57,10 @@ regex-lite = "0.1"
 dirs-next = "2"
 rust-embed = { version = "8", features = ["debug-embed"] }
 mime_guess = "2"
+qrcode = { version = "0.14", default-features = false, features = ["svg", "unicode"] }
 
 [build-dependencies]
 # build.rs uses std only — no extra deps needed
+qrcode = "0.14"
+image = { version = "0.25", default-features = false, features = ["png"] }
+base64 = "0.22"

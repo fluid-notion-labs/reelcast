@@ -3,6 +3,62 @@ import { naturalSort } from './utils';
 
 declare const Plyr: any;
 
+// ── Remote control session ────────────────────────────────────────────────────
+let sessionId: string | null = null;
+let eventSource: EventSource | null = null;
+
+function getOrCreateSessionId(): string {
+  let id = sessionStorage.getItem('reelcast_session');
+  if (!id) {
+    id = crypto.randomUUID();
+    sessionStorage.setItem('reelcast_session', id);
+  }
+  return id;
+}
+
+function connectSession() {
+  if (eventSource) return;
+  sessionId = getOrCreateSessionId();
+  eventSource = new EventSource(`/events/${sessionId}`);
+  eventSource.onmessage = (e) => {
+    try {
+      const cmd = JSON.parse(e.data);
+      handleRemoteCommand(cmd);
+    } catch {}
+  };
+  eventSource.onerror = () => {
+    // Reconnect after 3s
+    eventSource?.close();
+    eventSource = null;
+    setTimeout(connectSession, 3000);
+  };
+}
+
+function reportPlaying(mediaId: string, title: string) {
+  if (!sessionId) return;
+  fetch(`/playing/${sessionId}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ media_id: mediaId, media_title: title }),
+  }).catch(() => {});
+}
+
+function handleRemoteCommand(cmd: { cmd: string; value?: number }) {
+  if (!plyr) return;
+  switch (cmd.cmd) {
+    case 'toggle': plyr.togglePlay(); break;
+    case 'play':   plyr.play(); break;
+    case 'pause':  plyr.pause(); break;
+    case 'stop':   plyr.stop(); break;
+    case 'seek':   plyr.currentTime = Math.max(0, plyr.currentTime + (cmd.value ?? 0)); break;
+    case 'next':   playNext(); break;
+    case 'prev':   playPrev(); break;
+  }
+}
+
+// Connect as soon as module loads
+connectSession();
+
 let plyr: any = null;
 let queue: MediaItem[] = [];
 let queueIdx = -1;
@@ -91,6 +147,7 @@ function playAtIdx(idx: number) {
   plyr.off('ended');
   plyr.on('ended', () => showUpNext());
   callbacks?.onQueueChange();
+  reportPlaying(item.id, item.title);
 }
 
 export function openPlayer(item: MediaItem, allItems: MediaItem[], cb: QueueCallbacks) {

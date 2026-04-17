@@ -1,4 +1,6 @@
 mod cache;
+mod qr;
+mod sessions;
 mod ui;
 mod config;
 mod db;
@@ -61,6 +63,7 @@ async fn main() -> anyhow::Result<()> {
         pool,
         media_cache,
         config: Arc::new(config.clone()),
+        sessions: sessions::SessionRegistry::new(),
     };
 
     log_ui_info();
@@ -82,12 +85,16 @@ async fn main() -> anyhow::Result<()> {
             axum::serve(listener, app).await.unwrap();
         });
 
-        tls::serve(serve::router(state), https_addr, config).await?;
+        let app = serve::router(state).into_make_service_with_connect_info::<std::net::SocketAddr>();
+        tls::serve_svc(app, https_addr, config).await?;
     } else {
         let addr: std::net::SocketAddr =
             format!("{}:{}", config.host, config.port).parse()?;
         info!("Listening on http://{}", addr);
-        axum::serve(tokio::net::TcpListener::bind(addr).await?, serve::router(state)).await?;
+        axum::serve(
+            tokio::net::TcpListener::bind(addr).await?,
+            serve::router(state).into_make_service_with_connect_info::<std::net::SocketAddr>()
+        ).await?;
     }
 
     Ok(())
@@ -108,6 +115,28 @@ fn log_ui_info() {
 }
 
 fn print_urls(config: &Config) {
+    let ip = crate::net::local_ip().map(|ip| ip.to_string()).unwrap_or_else(|| config.host.clone());
+    let control_url = format!("{}://{}:{}/control", config.scheme(), ip, config.port);
+    info!("  Remote control: {}", control_url);
+    // Print compact QR to terminal
+    let qr_str = print_qr_terminal(&control_url);
+    for line in qr_str.lines() {
+        info!("{}", line);
+    }
+}
+
+fn print_qr_terminal(url: &str) -> String {
+    use qrcode::{QrCode, EcLevel};
+    use qrcode::render::unicode;
+    QrCode::with_error_correction_level(url, EcLevel::M)
+        .or_else(|_| QrCode::new(url))
+        .map(|code| code.render::<unicode::Dense1x2>()
+            .quiet_zone(true)
+            .build())
+        .unwrap_or_default()
+}
+
+fn _old_print_urls(config: &Config) {
     let scheme = config.scheme();
     let ip = net::local_ip().map(|ip| ip.to_string()).unwrap_or_else(|| config.host.clone());
     info!("  → {}://{}:{}", scheme, ip, config.port);
@@ -132,7 +161,11 @@ mod tls {
 
     use crate::config::Config;
 
-    pub async fn serve(app: axum::Router, addr: SocketAddr, config: Config) -> anyhow::Result<()> {
+    pub async fn serve_svc(
+        app: axum::routing::IntoMakeServiceWithConnectInfo<axum::Router, std::net::SocketAddr>,
+        addr: SocketAddr,
+        config: Config,
+    ) -> anyhow::Result<()> {
         let cert_path = config.cert.as_ref().unwrap();
         let key_path  = config.key.as_ref().unwrap();
 
@@ -160,12 +193,15 @@ mod tls {
             let (tcp, _peer) = listener.accept().await?;
             let acceptor = acceptor.clone();
             let app = app.clone();
+            let mut make_svc = app.clone();
             tokio::spawn(async move {
                 let Ok(tls) = acceptor.accept(tcp).await else { return };
+                use tower::Service;
+                let router = make_svc.call(peer).await.unwrap();
                 let io = hyper_util::rt::TokioIo::new(tls);
                 let svc = hyper::service::service_fn(move |req| {
-                    let mut app = app.clone();
-                    async move { tower::Service::call(&mut app, req).await }
+                    let mut r = router.clone();
+                    async move { tower::Service::call(&mut r, req).await }
                 });
                 let _ = hyper_util::server::conn::auto::Builder::new(
                     hyper_util::rt::TokioExecutor::new()

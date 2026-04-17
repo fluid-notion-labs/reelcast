@@ -2,10 +2,11 @@ use std::sync::Arc;
 
 use axum::{
     Router,
-    extract::{Path, Query, State},
+    extract::{ConnectInfo, Path, Query, State},
+    http::StatusCode,
     http::HeaderMap,
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
     Json,
 };
 use serde::{Deserialize, Serialize};
@@ -26,6 +27,7 @@ pub struct AppState {
     pub pool: SqlitePool,
     pub media_cache: MediaCache,
     pub config: Arc<Config>,
+    pub sessions: crate::sessions::SessionRegistry,
 }
 
 pub fn router(state: AppState) -> Router {
@@ -41,7 +43,14 @@ pub fn router(state: AppState) -> Router {
         .route("/health", get(health))
         .route("/setup", get(setup_page))
         .route("/cert", get(serve_cert))
+        .route("/qr", get(serve_qr))
         .route("/debug/ui", get(debug_ui))
+        .route("/control", get(control_page))
+        .route("/qr", get(serve_qr))
+        .route("/sessions", get(list_sessions))
+        .route("/events/:session", get(sse_events))
+        .route("/command/:session", post(send_command))
+        .route("/playing/:session", post(update_playing))
         .fallback(get(serve_static))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
@@ -79,6 +88,24 @@ async fn index() -> impl IntoResponse {
             else { "const FEATURE_VLC = false;" },
         );
     axum::response::Html(html)
+}
+
+async fn serve_qr(State(state): State<AppState>) -> impl IntoResponse {
+    use qrcode::QrCode;
+    use qrcode::render::svg;
+
+    let url = base_url(&state.config);
+    let code = QrCode::new(url.as_bytes()).unwrap();
+    let svg_str = code.render::<svg::Color>()
+        .min_dimensions(200, 200)
+        .dark_color(svg::Color("#f97316"))
+        .light_color(svg::Color("#0f0f0f"))
+        .build();
+
+    (
+        [(axum::http::header::CONTENT_TYPE, "image/svg+xml")],
+        svg_str,
+    )
 }
 
 async fn debug_ui() -> impl IntoResponse {
@@ -341,4 +368,68 @@ fn file_base_url(config: &Config) -> String {
         .unwrap_or_else(|| config.host.clone());
     let port = if config.tls_enabled() { config.media_port } else { config.port };
     format!("http://{}:{}", host, port)
+}
+
+// ── Control / SSE handlers ────────────────────────────────────────────────────
+
+async fn control_page() -> impl IntoResponse {
+    axum::response::Html(include_str!("../ui/control/index.html"))
+}
+
+async fn serve_qr(State(state): State<AppState>) -> impl IntoResponse {
+    let base = base_url(&state.config);
+    let control_url = format!("{}/control", base);
+    let svg = crate::qr::svg_for_url(&control_url);
+    ([(axum::http::header::CONTENT_TYPE, "image/svg+xml")], svg)
+}
+
+async fn list_sessions(State(state): State<AppState>) -> impl IntoResponse {
+    Json(state.sessions.list())
+}
+
+async fn update_playing(
+    State(state): State<AppState>,
+    Path(session): Path<String>,
+    Json(body): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    let media_id = body["media_id"].as_str().unwrap_or("");
+    let media_title = body["media_title"].as_str().unwrap_or("");
+    state.sessions.update_media(&session, media_id, media_title);
+    StatusCode::OK
+}
+
+async fn sse_events(
+    State(state): State<AppState>,
+    Path(session): Path<String>,
+    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
+) -> impl IntoResponse {
+    use axum::response::sse::{Event, KeepAlive, Sse};
+    use tokio_stream::wrappers::BroadcastStream;
+    use tokio_stream::StreamExt;
+
+    let client_ip = addr.ip().to_string();
+    let rx = state.sessions.register(session.clone(), client_ip);
+
+    let stream = BroadcastStream::new(rx)
+        .filter_map(|msg| match msg {
+            Ok(cmd) => {
+                let data = serde_json::to_string(&cmd).unwrap_or_default();
+                Some(Ok::<_, std::convert::Infallible>(Event::default().data(data)))
+            }
+            Err(_) => None,
+        });
+
+    Sse::new(stream).keep_alive(KeepAlive::default())
+}
+
+async fn send_command(
+    State(state): State<AppState>,
+    Path(session): Path<String>,
+    Json(cmd): Json<crate::sessions::PlayerCommand>,
+) -> impl IntoResponse {
+    if state.sessions.send_command(&session, cmd) {
+        StatusCode::OK
+    } else {
+        StatusCode::NOT_FOUND
+    }
 }

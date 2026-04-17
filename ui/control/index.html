@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Reelcast Remote</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body { font-family: system-ui, sans-serif; background: #0a0a0a; color: #e0e0e0; min-height: 100vh; }
+  header { padding: 1rem 1.2rem 0.5rem; display: flex; align-items: center; justify-content: space-between; }
+  h1 { font-size: 1.2rem; font-weight: 700; color: #fff; }
+  h1 span { color: #f97316; }
+  .subtitle { font-size: 0.75rem; color: #555; }
+  #qr-btn { background: none; border: 1px solid #333; border-radius: 6px; color: #888; font-size: 0.75rem; padding: 0.3rem 0.6rem; cursor: pointer; }
+  #qr-btn:hover { border-color: #f97316; color: #f97316; }
+
+  #qr-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 50; align-items: center; justify-content: center; flex-direction: column; gap: 1rem; }
+  #qr-modal.open { display: flex; }
+  #qr-modal img, #qr-modal svg { width: 220px; height: 220px; background: #fff; border-radius: 8px; padding: 8px; }
+  #qr-modal p { color: #aaa; font-size: 0.85rem; }
+  #qr-close { background: #222; border: 1px solid #333; color: #aaa; border-radius: 6px; padding: 0.4rem 1rem; cursor: pointer; font-size: 0.9rem; }
+
+  #no-sessions { padding: 2rem 1.2rem; color: #444; font-size: 0.9rem; text-align: center; }
+
+  .session-card { background: #141414; border: 1px solid #1e1e1e; border-radius: 12px; margin: 0.75rem; padding: 1rem; }
+  .session-card.active { border-color: #f97316; }
+  .session-ip { font-size: 0.72rem; color: #555; margin-bottom: 0.3rem; }
+  .session-title { font-size: 1rem; font-weight: 600; margin-bottom: 0.8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .session-title.idle { color: #444; font-style: italic; font-weight: 400; }
+
+  .controls { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.4rem; margin-bottom: 0.5rem; }
+  .ctrl-btn {
+    padding: 0.7rem 0.3rem; border-radius: 8px; border: none;
+    background: #1e1e1e; color: #ccc; font-size: 1rem;
+    cursor: pointer; touch-action: manipulation;
+    transition: background 0.1s, transform 0.1s;
+  }
+  .ctrl-btn:active { background: #f97316; color: #fff; transform: scale(0.95); }
+  .ctrl-btn.primary { background: #f97316; color: #fff; }
+  .ctrl-btn.primary:active { background: #ea6a0a; }
+  .ctrl-btn.danger { background: #2a0a0a; color: #f87171; }
+  .ctrl-btn.danger:active { background: #7f1d1d; }
+
+  .seek-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.4rem; }
+  .seek-btn {
+    padding: 0.5rem; border-radius: 8px; border: none;
+    background: #1a1a1a; color: #888; font-size: 0.78rem;
+    cursor: pointer; touch-action: manipulation; text-align: center;
+  }
+  .seek-btn:active { background: #2a2a2a; color: #fff; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Reel<span>cast</span> Remote</h1>
+    <p class="subtitle">Control your player from here</p>
+  </div>
+  <button id="qr-btn" onclick="showQr()">⬜ QR</button>
+</header>
+
+<div id="qr-modal">
+  <div id="qr-img"></div>
+  <p id="qr-url"></p>
+  <button id="qr-close" onclick="hideQr()">Close</button>
+</div>
+
+<div id="sessions"></div>
+<div id="no-sessions" style="display:none">No active players found.<br>Open Reelcast in a browser to start watching.</div>
+
+<script>
+  let qrLoaded = false;
+
+  async function showQr() {
+    document.getElementById('qr-modal').classList.add('open');
+    if (!qrLoaded) {
+      const res = await fetch('/qr');
+      const svg = await res.text();
+      document.getElementById('qr-img').innerHTML = svg;
+      document.getElementById('qr-url').textContent = location.origin + '/control';
+      qrLoaded = true;
+    }
+  }
+  function hideQr() { document.getElementById('qr-modal').classList.remove('open'); }
+
+  async function cmd(sessionId, command, value = null) {
+    await fetch(`/command/${sessionId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cmd: command, value }),
+    });
+  }
+
+  function sessionCard(s) {
+    const idle = !s.media_title;
+    return `
+    <div class="session-card ${idle ? '' : 'active'}">
+      <div class="session-ip">📺 ${s.client_ip}</div>
+      <div class="session-title ${idle ? 'idle' : ''}">${s.media_title || 'Idle'}</div>
+      <div class="controls">
+        <button class="ctrl-btn" onclick="cmd('${s.session_id}','prev')" title="Previous">⏮</button>
+        <button class="ctrl-btn" onclick="cmd('${s.session_id}','seek',-60)" title="-60s">«60</button>
+        <button class="ctrl-btn primary" onclick="cmd('${s.session_id}','toggle')" title="Play/Pause">⏯</button>
+        <button class="ctrl-btn" onclick="cmd('${s.session_id}','seek',60)" title="+60s">60»</button>
+        <button class="ctrl-btn" onclick="cmd('${s.session_id}','next')" title="Next">⏭</button>
+      </div>
+      <div class="seek-row">
+        <button class="seek-btn" onclick="cmd('${s.session_id}','seek',-10)">« 10s</button>
+        <button class="seek-btn danger" onclick="cmd('${s.session_id}','stop')">■ Stop</button>
+        <button class="seek-btn" onclick="cmd('${s.session_id}','seek',10)">10s »</button>
+      </div>
+    </div>`;
+  }
+
+  async function poll() {
+    try {
+      const res = await fetch('/sessions');
+      const sessions = await res.json();
+      const el = document.getElementById('sessions');
+      const none = document.getElementById('no-sessions');
+      if (sessions.length === 0) {
+        el.innerHTML = '';
+        none.style.display = 'block';
+      } else {
+        none.style.display = 'none';
+        el.innerHTML = sessions.map(sessionCard).join('');
+      }
+    } catch {}
+  }
+
+  poll();
+  setInterval(poll, 3000);
+</script>
+</body>
+</html>

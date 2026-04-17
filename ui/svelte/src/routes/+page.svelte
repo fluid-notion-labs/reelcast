@@ -13,6 +13,7 @@
   let status = $state('');
   let activeItem = $state<MediaItem | null>(null);
   let showHttpsBanner = $state(false);
+  let qrOpen = $state(false);
 
   function focusOnMount(node: HTMLElement) {
     node.focus();
@@ -92,7 +93,26 @@
 {/if}
 
 <header>
-  <h1>Reel<span>cast</span> <a href="/library" class="lib-link">Library →</a></h1>
+  <div class="header-row">
+    <h1>Reel<span>cast</span> <a href="/library" class="lib-link">Library →</a></h1>
+    <button class="qr-btn" onclick={() => qrOpen = !qrOpen} title="Show QR code">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+        <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="3" height="3"/>
+        <rect x="19" y="14" width="2" height="2"/><rect x="14" y="19" width="2" height="2"/>
+        <rect x="19" y="19" width="2" height="2"/>
+      </svg>
+      QR
+    </button>
+  </div>
+  {#if qrOpen}
+    <div class="qr-popup">
+      <p class="qr-label">Open on another device</p>
+      <img src="/qr" alt="QR code" class="qr-img" />
+      <p class="qr-url">{typeof window !== 'undefined' ? window.location.origin : ''}</p>
+      <button class="qr-close" onclick={() => qrOpen = false}>✕ Close</button>
+    </div>
+  {/if}
 </header>
 
 <div class="search-bar">
@@ -145,6 +165,15 @@
 
   h1 { font-size: 1.6rem; font-weight: 600; color: #fff; margin-bottom: 1.5rem; letter-spacing: -0.02em; }
   h1 span { color: #f97316; }
+  .header-row { display: flex; align-items: center; justify-content: space-between; }
+  .qr-btn { display: flex; align-items: center; gap: 0.4rem; padding: 0.4rem 0.8rem; border-radius: 6px; border: 1px solid #2a2a2a; background: #1a1a1a; color: #aaa; font-size: 0.82rem; cursor: pointer; }
+  .qr-btn:hover { border-color: #f97316; color: #f97316; }
+  .qr-popup { margin-top: 1rem; background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 10px; padding: 1.2rem; display: inline-flex; flex-direction: column; align-items: center; gap: 0.6rem; }
+  .qr-label { font-size: 0.8rem; color: #888; }
+  .qr-img { width: 180px; height: 180px; border-radius: 6px; }
+  .qr-url { font-size: 0.72rem; color: #555; font-family: monospace; }
+  .qr-close { padding: 0.3rem 0.8rem; border-radius: 5px; border: 1px solid #333; background: none; color: #666; font-size: 0.8rem; cursor: pointer; }
+  .qr-close:hover { color: #fff; border-color: #555; }
   .lib-link { font-size: 0.75rem; font-weight: 400; color: #555; text-decoration: none; vertical-align: middle; }
   .lib-link:hover { color: #f97316; }
 
