@@ -142,9 +142,61 @@
     if (plyr) return;
     plyr = new Plyr('#player', {
       controls: ['play-large','play','progress','current-time','duration','mute','volume','fullscreen'],
-      keyboard: { focused: true, global: true },
+      keyboard: { focused: false, global: false }, // we handle keys manually below
     });
   }
+
+  // VLC-style keyboard shortcuts
+  document.addEventListener('keydown', e => {
+    if (!plyr || !document.getElementById('player-modal').classList.contains('open')) return;
+    // Don't interfere with text inputs
+    if (e.target.tagName === 'INPUT') return;
+
+    const cur = plyr.currentTime;
+    switch (true) {
+      case e.key === ' ':
+        e.preventDefault();
+        plyr.togglePlay(); break;
+      case e.key === 'f' || e.key === 'F':
+        plyr.fullscreen.toggle(); break;
+      case e.key === 'm' || e.key === 'M':
+        plyr.muted = !plyr.muted; break;
+
+      // Shift+← / Shift+→  — ±3s (fine scrub)
+      case e.shiftKey && e.key === 'ArrowLeft':
+        e.preventDefault(); plyr.currentTime = Math.max(0, cur - 3); break;
+      case e.shiftKey && e.key === 'ArrowRight':
+        e.preventDefault(); plyr.currentTime = cur + 3; break;
+
+      // ← / → bare — ±10s (default VLC short jump)
+      case !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey && e.key === 'ArrowLeft':
+        e.preventDefault(); plyr.currentTime = Math.max(0, cur - 10); break;
+      case !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey && e.key === 'ArrowRight':
+        e.preventDefault(); plyr.currentTime = cur + 10; break;
+
+      // Alt+← / Alt+→ — ±10s (VLC medium jump, same as bare arrows)
+      case e.altKey && e.key === 'ArrowLeft':
+        e.preventDefault(); plyr.currentTime = Math.max(0, cur - 10); break;
+      case e.altKey && e.key === 'ArrowRight':
+        e.preventDefault(); plyr.currentTime = cur + 10; break;
+
+      // Ctrl+← / Ctrl+→ — ±60s (VLC long jump)
+      case e.ctrlKey && e.key === 'ArrowLeft':
+        e.preventDefault(); plyr.currentTime = Math.max(0, cur - 60); break;
+      case e.ctrlKey && e.key === 'ArrowRight':
+        e.preventDefault(); plyr.currentTime = cur + 60; break;
+
+      // ↑ / ↓ — volume
+      case e.key === 'ArrowUp':
+        e.preventDefault(); plyr.volume = Math.min(1, plyr.volume + 0.1); break;
+      case e.key === 'ArrowDown':
+        e.preventDefault(); plyr.volume = Math.max(0, plyr.volume - 0.1); break;
+
+      // Escape — close player
+      case e.key === 'Escape':
+        closePlayer(); break;
+    }
+  });
   function openPlayer(url, title) {
     initPlyr();
     document.getElementById('player-title').textContent = title;
@@ -158,8 +210,6 @@
     document.getElementById('player-modal').classList.remove('open');
     document.body.style.overflow = '';
   }
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') closePlayer(); });
-
   // ── Recent Searches (localStorage) ───────────────────────────────────────
   const SEARCH_KEY = 'reelcast_searches';
   function getRecentSearches() {
