@@ -109,10 +109,12 @@ struct MediaItem {
     size_bytes: i64,
     container: Option<String>,
     resolution: Option<String>,
-    file_url: String,      // http — for VLC
-    file_url_https: String, // https — for browser player
+    file_url: String,
+    file_url_https: String,
     play_url: String,
     playlist_url: String,
+    dir: String,      // parent directory path — for grouping/sorting
+    filename: String, // original filename — for natural sort within dir
 }
 
 impl MediaItem {
@@ -134,6 +136,10 @@ impl MediaItem {
             },
             play_url: format!("{}/play/{}", base_url, m.id),
             playlist_url: format!("{}/playlist/{}", base_url, m.id),
+            dir: std::path::Path::new(&m.path)
+                .parent().and_then(|p| p.to_str()).unwrap_or("").to_string(),
+            filename: std::path::Path::new(&m.path)
+                .file_name().and_then(|f| f.to_str()).unwrap_or("").to_string(),
             id: m.id.clone(),
             title: m.title.clone(),
             year: m.year,

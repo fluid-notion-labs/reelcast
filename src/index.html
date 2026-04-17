@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Reelcast</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/plyr/3.7.8/plyr.min.css">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: system-ui, sans-serif; background: #0f0f0f; color: #e0e0e0; min-height: 100vh; padding: 2rem; }
@@ -42,36 +43,46 @@
   .card { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 8px; padding: 1rem; }
   .card h2 { font-size: 1rem; font-weight: 600; margin-bottom: 0.3rem; }
   .meta { font-size: 0.78rem; color: #666; margin-bottom: 0.8rem; }
-  .actions { display: flex; gap: 0.5rem; }
-  .btn-play { flex: 1; padding: 0.4rem 0.6rem; text-align: center; border-radius: 5px; background: #f97316; color: #fff; text-decoration: none; font-size: 0.82rem; white-space: nowrap; }
+  .actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+  .btn-play { flex: 1; padding: 0.4rem 0.6rem; text-align: center; border-radius: 5px; background: #f97316; color: #fff; text-decoration: none; font-size: 0.82rem; white-space: nowrap; border: none; cursor: pointer; }
   .btn-copy { padding: 0.4rem 0.6rem; text-align: center; border-radius: 5px; background: #222; color: #aaa; border: none; font-size: 0.82rem; cursor: pointer; white-space: nowrap; }
   .btn-play:hover { background: #ea6a0a; }
   .btn-copy:hover { background: #2a2a2a; color: #fff; }
   .btn-copy.copied { background: #14532d; color: #86efac; }
+  .btn-sm { padding: 0.3rem 0.5rem; font-size: 0.75rem; }
   .url-row { display: flex; align-items: center; gap: 0.4rem; margin-top: 0.5rem; background: #111; border: 1px solid #2a2a2a; border-radius: 5px; padding: 0.3rem 0.5rem; }
   .url-link { flex: 1; font-size: 0.72rem; color: #888; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: monospace; }
   .url-link:hover { color: #f97316; }
+
   /* Player modal */
   #player-modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.92); z-index:100; align-items:center; justify-content:center; flex-direction:column; gap:1rem; }
   #player-modal.open { display:flex; }
-  #player-wrap { width:min(90vw,1100px); }
+  #player-wrap { width:min(90vw,1100px); position:relative; }
   #player-wrap video { width:100%; border-radius:8px; }
   #player-title { color:#fff; font-size:1rem; font-weight:600; }
   #player-close { position:fixed; top:1.2rem; right:1.4rem; background:none; border:none; color:#888; font-size:1.6rem; cursor:pointer; line-height:1; }
   #player-close:hover { color:#fff; }
-  /* Feature flag — swap display:none to display:flex to enable */
-  .FEATURE-player { display:none; }
 
-  .btn-sm { padding: 0.3rem 0.5rem; font-size: 0.75rem; }
+  /* Up next */
+  #up-next { position:absolute; bottom:4rem; right:1rem; background:rgba(0,0,0,0.88); border:1px solid #333; border-radius:8px; padding:0.75rem 1rem; max-width:260px; display:none; }
+  #up-next.visible { display:block; }
+  #up-next .label { font-size:0.7rem; color:#888; text-transform:uppercase; letter-spacing:0.08em; margin-bottom:0.3rem; }
+  #up-next .next-title { font-size:0.85rem; color:#e0e0e0; font-weight:600; margin-bottom:0.5rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #up-next .next-actions { display:flex; gap:0.4rem; }
+  #up-next .btn-play-next { padding:0.3rem 0.7rem; border-radius:4px; border:none; font-size:0.8rem; cursor:pointer; background:#f97316; color:#fff; }
+  #up-next .btn-cancel-next { padding:0.3rem 0.7rem; border-radius:4px; border:none; font-size:0.8rem; cursor:pointer; background:#222; color:#aaa; }
+
+  /* HTTPS warning */
+  #https-banner { display:none; background:#1c1408; border:1px solid #78350f; border-radius:6px; padding:0.6rem 1rem; margin-bottom:1rem; font-size:0.85rem; color:#fbbf24; }
 </style>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/plyr/3.7.8/plyr.min.css">
 </head>
 <body>
-<h1>Reel<span>cast</span></h1>
 
-<div id="https-banner" style="display:none;background:#1c1408;border:1px solid #78350f;border-radius:6px;padding:0.6rem 1rem;margin-bottom:1rem;font-size:0.85rem;color:#fbbf24">
+<div id="https-banner">
   ⚠️ Running on HTTP — <strong>Copy URL</strong> won't work. <a href="/setup" style="color:#f97316;font-weight:600">Set up HTTPS →</a>
 </div>
+
+<h1>Reel<span>cast</span></h1>
 
 <div id="search-bar">
   <input id="q" type="text" placeholder="Search movies…" autofocus>
@@ -94,11 +105,22 @@
   <div id="player-title"></div>
   <div id="player-wrap">
     <video id="player" playsinline controls></video>
+    <div id="up-next">
+      <div class="label">Up Next</div>
+      <div class="next-title" id="next-title"></div>
+      <div class="next-actions">
+        <button class="btn-play-next" onclick="playNext()">▶ Play Now</button>
+        <button class="btn-cancel-next" onclick="cancelNext()">✕</button>
+      </div>
+    </div>
   </div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/plyr/3.7.8/plyr.min.js"></script>
 <script>
+  const FEATURE_PLAYER = false;
+  const FEATURE_VLC = false;
+
   // ── Helpers ──────────────────────────────────────────────────────────────
   function fmtDur(s) {
     if (!s) return '';
@@ -115,12 +137,16 @@
     if (diff < 86400) return Math.floor(diff/3600)+'h ago';
     return Math.floor(diff/86400)+'d ago';
   }
+  function naturalSort(a, b) {
+    return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+  }
+  function safeTitle(t) { return t.replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
 
   // ── Clipboard ─────────────────────────────────────────────────────────────
   function copyUrl(btn, url) {
     const doFlash = () => {
-      btn.textContent = '✓ Copied'; btn.classList.add('copied');
-      setTimeout(() => { btn.textContent = '⎘ Copy URL'; btn.classList.remove('copied'); }, 2000);
+      btn.textContent = '✓'; btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = '⎘'; btn.classList.remove('copied'); }, 2000);
     };
     if (navigator.clipboard && window.isSecureContext) {
       navigator.clipboard.writeText(url).then(doFlash);
@@ -133,83 +159,99 @@
     }
   }
 
-  // ── Plyr ─────────────────────────────────────────────────────────────────
-  const FEATURE_PLAYER = false; // flip to true to enable in-browser player
-  const FEATURE_VLC = false; // flip to true to enable VLC buttons
-
+  // ── Plyr ──────────────────────────────────────────────────────────────────
   let plyr = null;
   function initPlyr() {
     if (plyr) return;
     plyr = new Plyr('#player', {
       controls: ['play-large','play','progress','current-time','duration','mute','volume','fullscreen'],
-      keyboard: { focused: false, global: false }, // we handle keys manually below
+      keyboard: { focused: false, global: false },
     });
+    plyr.on('ended', showUpNext);
   }
 
-  // VLC-style keyboard shortcuts
-  document.addEventListener('keydown', e => {
-    if (!plyr || !document.getElementById('player-modal').classList.contains('open')) return;
-    // Don't interfere with text inputs
-    if (e.target.tagName === 'INPUT') return;
+  // ── Playback queue ────────────────────────────────────────────────────────
+  let queue = [];
+  let queueIdx = -1;
+  let nextTimer = null;
+  let allMediaItems = [];
 
-    const cur = plyr.currentTime;
-    switch (true) {
-      case e.key === ' ':
-        e.preventDefault();
-        plyr.togglePlay(); break;
-      case e.key === 'f' || e.key === 'F':
-        plyr.fullscreen.toggle(); break;
-      case e.key === 'm' || e.key === 'M':
-        plyr.muted = !plyr.muted; break;
+  function naturalSortItems(items) {
+    return [...items].sort((a, b) => naturalSort(a.filename, b.filename));
+  }
 
-      // Shift+← / Shift+→  — ±3s (fine scrub)
-      case e.shiftKey && e.key === 'ArrowLeft':
-        e.preventDefault(); plyr.currentTime = Math.max(0, cur - 3); break;
-      case e.shiftKey && e.key === 'ArrowRight':
-        e.preventDefault(); plyr.currentTime = cur + 3; break;
+  function buildQueue(item, items) {
+    const dirItems = naturalSortItems(items.filter(m => m.dir === item.dir));
+    queue = dirItems;
+    queueIdx = dirItems.findIndex(m => m.id === item.id);
+  }
 
-      // ← / → bare — ±10s (default VLC short jump)
-      case !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey && e.key === 'ArrowLeft':
-        e.preventDefault(); plyr.currentTime = Math.max(0, cur - 10); break;
-      case !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey && e.key === 'ArrowRight':
-        e.preventDefault(); plyr.currentTime = cur + 10; break;
+  function showUpNext() {
+    cancelNext();
+    if (queueIdx < 0 || queueIdx >= queue.length - 1) return;
+    const next = queue[queueIdx + 1];
+    document.getElementById('next-title').textContent = next.title;
+    document.getElementById('up-next').classList.add('visible');
+    nextTimer = setTimeout(() => playNext(), 8000);
+  }
 
-      // Alt+← / Alt+→ — ±10s (VLC medium jump, same as bare arrows)
-      case e.altKey && e.key === 'ArrowLeft':
-        e.preventDefault(); plyr.currentTime = Math.max(0, cur - 10); break;
-      case e.altKey && e.key === 'ArrowRight':
-        e.preventDefault(); plyr.currentTime = cur + 10; break;
-
-      // Ctrl+← / Ctrl+→ — ±60s (VLC long jump)
-      case e.ctrlKey && e.key === 'ArrowLeft':
-        e.preventDefault(); plyr.currentTime = Math.max(0, cur - 60); break;
-      case e.ctrlKey && e.key === 'ArrowRight':
-        e.preventDefault(); plyr.currentTime = cur + 60; break;
-
-      // ↑ / ↓ — volume
-      case e.key === 'ArrowUp':
-        e.preventDefault(); plyr.volume = Math.min(1, plyr.volume + 0.1); break;
-      case e.key === 'ArrowDown':
-        e.preventDefault(); plyr.volume = Math.max(0, plyr.volume - 0.1); break;
-
-      // Escape — close player
-      case e.key === 'Escape':
-        closePlayer(); break;
+  function playNext() {
+    cancelNext();
+    if (queueIdx < queue.length - 1) {
+      queueIdx++;
+      const next = queue[queueIdx];
+      document.getElementById('player-title').textContent = next.title;
+      plyr.source = { type: 'video', sources: [{ src: next.file_url_https }] };
+      plyr.play();
     }
-  });
-  function openPlayer(url, title) {
+  }
+
+  function cancelNext() {
+    clearTimeout(nextTimer); nextTimer = null;
+    document.getElementById('up-next').classList.remove('visible');
+  }
+
+  // ── Player open/close ─────────────────────────────────────────────────────
+  function openPlayer(url, title, itemId) {
     initPlyr();
+    const item = allMediaItems.find(m => m.id === itemId);
+    if (item) buildQueue(item, allMediaItems);
+    else { queue = []; queueIdx = -1; }
     document.getElementById('player-title').textContent = title;
     plyr.source = { type: 'video', sources: [{ src: url }] };
     document.getElementById('player-modal').classList.add('open');
     document.body.style.overflow = 'hidden';
     plyr.play();
   }
+
   function closePlayer() {
     plyr && plyr.pause();
+    cancelNext();
     document.getElementById('player-modal').classList.remove('open');
     document.body.style.overflow = '';
   }
+
+  // ── VLC-style keyboard shortcuts ──────────────────────────────────────────
+  document.addEventListener('keydown', e => {
+    if (!plyr || !document.getElementById('player-modal').classList.contains('open')) return;
+    if (e.target.tagName === 'INPUT') return;
+    const cur = plyr.currentTime;
+    switch (true) {
+      case e.key === ' ':               e.preventDefault(); plyr.togglePlay(); break;
+      case e.key === 'f' || e.key==='F': plyr.fullscreen.toggle(); break;
+      case e.key === 'm' || e.key==='M': plyr.muted = !plyr.muted; break;
+      case e.shiftKey && e.key==='ArrowLeft':  e.preventDefault(); plyr.currentTime = Math.max(0,cur-3); break;
+      case e.shiftKey && e.key==='ArrowRight': e.preventDefault(); plyr.currentTime = cur+3; break;
+      case e.ctrlKey && e.key==='ArrowLeft':   e.preventDefault(); plyr.currentTime = Math.max(0,cur-60); break;
+      case e.ctrlKey && e.key==='ArrowRight':  e.preventDefault(); plyr.currentTime = cur+60; break;
+      case !e.shiftKey&&!e.altKey&&!e.ctrlKey&&!e.metaKey && e.key==='ArrowLeft':  e.preventDefault(); plyr.currentTime = Math.max(0,cur-10); break;
+      case !e.shiftKey&&!e.altKey&&!e.ctrlKey&&!e.metaKey && e.key==='ArrowRight': e.preventDefault(); plyr.currentTime = cur+10; break;
+      case e.key==='ArrowUp':   e.preventDefault(); plyr.volume = Math.min(1,plyr.volume+0.1); break;
+      case e.key==='ArrowDown': e.preventDefault(); plyr.volume = Math.max(0,plyr.volume-0.1); break;
+      case e.key==='Escape': closePlayer(); break;
+    }
+  });
+
   // ── Recent Searches (localStorage) ───────────────────────────────────────
   const SEARCH_KEY = 'reelcast_searches';
   function getRecentSearches() {
@@ -217,21 +259,19 @@
   }
   function saveSearch(q) {
     if (!q) return;
-    let searches = getRecentSearches().filter(s => s !== q);
-    searches.unshift(q);
-    searches = searches.slice(0, 10);
-    localStorage.setItem(SEARCH_KEY, JSON.stringify(searches));
+    let s = getRecentSearches().filter(x => x !== q);
+    s.unshift(q); s = s.slice(0,10);
+    localStorage.setItem(SEARCH_KEY, JSON.stringify(s));
     renderRecentSearches();
   }
   function renderRecentSearches() {
-    const searches = getRecentSearches();
     const el = document.getElementById('recent-searches');
-    el.innerHTML = searches.map(s =>
-      `<span class="chip" onclick="runSearch('${s.replace(/'/g,"\\'")}')">⌕ ${s}</span>`
+    el.innerHTML = getRecentSearches().map(s =>
+      `<span class="chip" onclick="runSearch('${safeTitle(s)}')">⌕ ${s}</span>`
     ).join('');
   }
 
-  // ── Recently Played (server) ──────────────────────────────────────────────
+  // ── Recently Played ───────────────────────────────────────────────────────
   async function loadRecentlyPlayed() {
     const res = await fetch('/recent');
     const items = await res.json();
@@ -244,17 +284,13 @@
         <div class="time">${fmtAgo(r.played_at)}</div>
         <div class="actions">
           ${FEATURE_VLC ? `<a class="btn-play btn-sm" href="${r.play_url}" download>▶ VLC</a>` : ''}
-          ${FEATURE_PLAYER ? `<button class="btn-copy btn-sm" style="display:inline-block;background:#1d4ed8;color:#fff" onclick="openPlayer('${r.file_url_https}','${r.title.replace(/'/g,"\'")}')">▶ Browser</button>` : ''}
-          <button class="btn-copy btn-sm" onclick="copyUrl(this, '${r.file_url}')">⎘</button>
-        </div>
-        <div class="url-row" style="margin-top:0.4rem">
-          <a class="url-link" href="${r.file_url}" target="_blank" title="${r.file_url}">${r.file_url}</a>
-          <button class="btn-copy btn-sm" onclick="copyUrl(this, '${r.file_url}')">⎘</button>
+          ${FEATURE_PLAYER ? `<button class="btn-play btn-sm" style="background:#1d4ed8" onclick="openPlayer('${r.file_url_https}','${safeTitle(r.title)}','${r.media_id}')">▶ Play</button>` : ''}
+          <button class="btn-copy btn-sm" onclick="copyUrl(this,'${r.file_url}')">⎘</button>
         </div>
       </div>`).join('');
   }
 
-  // ── Search ────────────────────────────────────────────────────────────────
+  // ── Card HTML ─────────────────────────────────────────────────────────────
   function cardHtml(m) {
     const meta = [m.year, fmtDur(m.duration_secs), m.resolution, fmtSize(m.size_bytes)].filter(Boolean).join(' · ');
     return `
@@ -263,13 +299,14 @@
         <div class="meta">${meta}</div>
         <div class="actions">
           ${FEATURE_VLC ? `<a class="btn-play" href="${m.play_url}" download>▶ VLC</a>` : ''}
-          ${FEATURE_PLAYER ? `<button class="btn-copy FEATURE-player" style="display:inline-block" onclick="openPlayer('${m.file_url_https}','${m.title.replace(/'/g,"\'")}')">▶ Browser</button>` : ''}
-          <button class="btn-copy" onclick="copyUrl(this, '${m.file_url}')">⎘</button>
+          ${FEATURE_PLAYER ? `<button class="btn-play" onclick="openPlayer('${m.file_url_https}','${safeTitle(m.title)}','${m.id}')">▶ Play</button>` : ''}
+          <button class="btn-copy" onclick="copyUrl(this,'${m.file_url}')">⎘</button>
         </div>
-        ${FEATURE_VLC ? `<div class="url-row"><a class="url-link" href="${m.file_url}" target="_blank" title="${m.file_url}">${m.file_url}</a><button class="btn-copy" onclick="copyUrl(this, '${m.file_url}')">⎘</button></div>` : ''}
+        ${FEATURE_VLC ? `<div class="url-row"><a class="url-link" href="${m.file_url}" target="_blank">${m.file_url}</a><button class="btn-copy" onclick="copyUrl(this,'${m.file_url}')">⎘</button></div>` : ''}
       </div>`;
   }
 
+  // ── Search ────────────────────────────────────────────────────────────────
   async function runSearch(q) {
     document.getElementById('q').value = q;
     await doSearch();
@@ -282,12 +319,13 @@
     const res = await fetch(url);
     const items = await res.json();
     if (q) saveSearch(q);
+    allMediaItems = items;
     document.getElementById('status').textContent = `${items.length} result${items.length !== 1 ? 's' : ''}`;
     document.getElementById('results-title').style.display = items.length ? 'block' : 'none';
     document.getElementById('results').innerHTML = items.map(cardHtml).join('');
   }
 
-  // ── HTTPS banner ─────────────────────────────────────────────────────────
+  // ── HTTPS banner ──────────────────────────────────────────────────────────
   if (location.protocol === 'http:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
     document.getElementById('https-banner').style.display = 'block';
   }
