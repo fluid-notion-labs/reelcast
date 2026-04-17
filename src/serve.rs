@@ -37,6 +37,7 @@ pub fn router(state: AppState) -> Router {
         .route("/play/:id", get(play_xspf))
         .route("/playlist/:id", get(play_m3u))
         .route("/file/:id", get(serve_file))
+        .route("/file/:id/*name", get(serve_file_named))
         .route("/health", get(health))
         .route("/setup", get(setup_page))
         .route("/cert", get(serve_cert))
@@ -49,6 +50,7 @@ pub fn router(state: AppState) -> Router {
 pub fn file_router(state: AppState) -> Router {
     Router::new()
         .route("/file/:id", get(serve_file))
+        .route("/file/:id/*name", get(serve_file_named))
         .route("/play/:id", get(play_xspf))
         .route("/playlist/:id", get(play_m3u))
         .layer(CorsLayer::permissive())
@@ -106,7 +108,11 @@ impl MediaItem {
             _ => None,
         };
         Self {
-            file_url: format!("{}/file/{}", file_base, m.id),
+            file_url: {
+                let ext = std::path::Path::new(&m.path)
+                    .extension().and_then(|e| e.to_str()).unwrap_or("mkv");
+                format!("{}/file/{}/{}.{}", file_base, m.id, urlenc(&m.title), ext)
+            },
             play_url: format!("{}/play/{}", base_url, m.id),
             playlist_url: format!("{}/playlist/{}", base_url, m.id),
             id: m.id.clone(),
@@ -162,7 +168,7 @@ async fn recent_played(State(state): State<AppState>) -> Result<impl IntoRespons
     let rows = db::recent_plays(&state.pool, 20).await?;
     let file_base = file_base_url(&state.config);
     let items: Vec<_> = rows.into_iter().map(|r| RecentItem {
-        file_url: format!("{}/file/{}", file_base, r.media_id),
+        file_url: format!("{}/file/{}/{}", file_base, r.media_id, urlenc(&r.title)),
         play_url: format!("{}/play/{}", base_url, r.media_id),
         media_id: r.media_id,
         title: r.title,
@@ -228,6 +234,16 @@ async fn serve_file(
         .map_err(|e| ReelcastError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))
 }
 
+/// Same as serve_file but with a filename hint in the URL for VLC on macOS.
+/// e.g. /file/<id>/Movie.Title.mkv — VLC uses the extension to identify format.
+async fn serve_file_named(
+    state: State<AppState>,
+    Path((id, _name)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> Result<Response> {
+    serve_file(state, Path(id), headers).await
+}
+
 /// Look up from cache first, fall back to DB for freshness
 async fn get_media_or_404(state: &AppState, id: &str) -> Result<MediaFile> {
     let files = state.media_cache.get().await;
@@ -237,6 +253,10 @@ async fn get_media_or_404(state: &AppState, id: &str) -> Result<MediaFile> {
     db::get_by_id(&state.pool, id)
         .await?
         .ok_or_else(|| ReelcastError::MediaNotFound { id: id.to_string() })
+}
+
+fn urlenc(s: &str) -> String {
+    percent_encoding::utf8_percent_encode(s, percent_encoding::NON_ALPHANUMERIC).to_string()
 }
 
 fn base_url(config: &Config) -> String {
