@@ -19,6 +19,7 @@ pub struct MediaFile {
     pub audio_codec: Option<String>,
     pub width: Option<i64>,
     pub height: Option<i64>,
+    pub series_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
@@ -39,6 +40,11 @@ pub async fn open(db_path: &Path) -> Result<SqlitePool> {
 }
 
 async fn migrate(pool: &SqlitePool) -> Result<()> {
+    // Add series_key column to existing DBs (idempotent)
+    let _ = sqlx::query("ALTER TABLE media_files ADD COLUMN series_key TEXT")
+        .execute(pool)
+        .await;
+
     sqlx::query(
         r#"
         CREATE TABLE IF NOT EXISTS media_files (
@@ -52,8 +58,10 @@ async fn migrate(pool: &SqlitePool) -> Result<()> {
             video_codec   TEXT,
             audio_codec   TEXT,
             width         INTEGER,
-            height        INTEGER
+            height        INTEGER,
+            series_key    TEXT
         );
+        CREATE INDEX IF NOT EXISTS idx_media_series ON media_files(series_key);
         CREATE INDEX IF NOT EXISTS idx_media_title ON media_files(title);
 
         CREATE TABLE IF NOT EXISTS play_history (
@@ -74,9 +82,9 @@ pub async fn upsert(pool: &SqlitePool, m: &MediaFile) -> Result<()> {
     sqlx::query(
         r#"
         INSERT INTO media_files
-            (id, path, title, year, duration_secs, size_bytes, container, video_codec, audio_codec, width, height)
+            (id, path, title, year, duration_secs, size_bytes, container, video_codec, audio_codec, width, height, series_key)
         VALUES
-            (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(path) DO UPDATE SET
             title         = excluded.title,
             year          = excluded.year,
@@ -86,7 +94,8 @@ pub async fn upsert(pool: &SqlitePool, m: &MediaFile) -> Result<()> {
             video_codec   = excluded.video_codec,
             audio_codec   = excluded.audio_codec,
             width         = excluded.width,
-            height        = excluded.height
+            height        = excluded.height,
+            series_key    = excluded.series_key
         "#,
     )
     .bind(&m.id)
@@ -100,6 +109,7 @@ pub async fn upsert(pool: &SqlitePool, m: &MediaFile) -> Result<()> {
     .bind(&m.audio_codec)
     .bind(m.width)
     .bind(m.height)
+    .bind(&m.series_key)
     .execute(pool)
     .await?;
     Ok(())
