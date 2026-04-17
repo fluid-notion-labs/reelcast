@@ -5,7 +5,7 @@ use axum::{
     extract::{Path, Query, State},
     http::HeaderMap,
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::get,
     Json,
 };
 use serde::{Deserialize, Serialize};
@@ -202,7 +202,7 @@ async fn serve_cert(State(state): State<AppState>) -> Result<Response> {
     Ok((
         [
             (axum::http::header::CONTENT_TYPE, "application/x-pem-file"),
-            (axum::http::header::CONTENT_DISPOSITION, "attachment; filename="reelcast.pem""),
+            (axum::http::header::CONTENT_DISPOSITION, "attachment; filename=\"reelcast.pem\""),
         ],
         bytes,
     ).into_response())

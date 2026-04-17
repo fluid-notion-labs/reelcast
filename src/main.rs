@@ -46,7 +46,7 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn print_urls(config: &Config, addr: std::net::SocketAddr) {
+fn print_urls(config: &Config, _addr: std::net::SocketAddr) {
     let scheme = config.scheme();
 
     // Always show localhost
