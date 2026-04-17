@@ -14,6 +14,10 @@
   let activeItem = $state<MediaItem | null>(null);
   let showHttpsBanner = $state(false);
 
+  function focusOnMount(node: HTMLElement) {
+    node.focus();
+  }
+
   async function doSearch() {
     const url = query.trim()
       ? `/search?q=${encodeURIComponent(query.trim())}`
@@ -96,7 +100,7 @@
     bind:value={query}
     onkeydown={handleKeydown}
     placeholder="Search movies…"
-    autofocus
+    use:focusOnMount
   />
   <button onclick={doSearch}>Search</button>
 </div>
@@ -104,7 +108,7 @@
 {#if recentSearches.length}
   <div class="chips">
     {#each recentSearches as s}
-      <span class="chip" onclick={() => { query = s; doSearch(); }}>⌕ {s}</span>
+      <button class="chip" onclick={() => { query = s; doSearch(); }}>⌕ {s}</button>
     {/each}
   </div>
 {/if}
