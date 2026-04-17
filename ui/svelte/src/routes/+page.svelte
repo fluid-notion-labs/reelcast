@@ -92,7 +92,7 @@
 {/if}
 
 <header>
-  <h1>Reel<span>cast</span></h1>
+  <h1>Reel<span>cast</span> <a href="/library" class="lib-link">Library →</a></h1>
 </header>
 
 <div class="search-bar">
@@ -145,6 +145,8 @@
 
   h1 { font-size: 1.6rem; font-weight: 600; color: #fff; margin-bottom: 1.5rem; letter-spacing: -0.02em; }
   h1 span { color: #f97316; }
+  .lib-link { font-size: 0.75rem; font-weight: 400; color: #555; text-decoration: none; vertical-align: middle; }
+  .lib-link:hover { color: #f97316; }
 
   .search-bar { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; }
   .search-bar input {
