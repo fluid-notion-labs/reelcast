@@ -31,16 +31,27 @@ async fn main() -> anyhow::Result<()> {
         info!("Indexed {} media files", count);
     }
 
-    let addr = format!("{}:{}", config.host, config.port);
+    let addr: std::net::SocketAddr = format!("{}:{}", config.host, config.port).parse()?;
     let state = AppState {
         pool,
-        config: Arc::new(config),
+        config: Arc::new(config.clone()),
     };
 
     let app = serve::router(state);
-    let listener = tokio::net::TcpListener::bind(&addr).await?;
-    info!("Listening on http://{}", addr);
 
-    axum::serve(listener, app).await?;
+    if config.tls_enabled() {
+        let cert = config.cert.as_ref().unwrap();
+        let key  = config.key.as_ref().unwrap();
+        let tls = axum_server::tls_rustls::RustlsConfig::from_pem_file(cert, key).await?;
+        info!("Listening on https://{}", addr);
+        axum_server::bind_rustls(addr, tls)
+            .serve(app.into_make_service())
+            .await?;
+    } else {
+        info!("Listening on http://{} (no TLS — run scripts/plz tls to enable)", addr);
+        let listener = tokio::net::TcpListener::bind(addr).await?;
+        axum::serve(listener, app).await?;
+    }
+
     Ok(())
 }

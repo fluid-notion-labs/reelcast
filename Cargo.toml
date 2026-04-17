@@ -45,3 +45,4 @@ once_cell = "1"
 uuid = { version = "1", features = ["v4"] }
 percent-encoding = "2"
 regex-lite = "0.1"
+axum-server = { version = "0.6", features = ["tls-rustls"] }

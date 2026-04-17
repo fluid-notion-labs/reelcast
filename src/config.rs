@@ -22,10 +22,6 @@ pub struct Config {
     #[arg(long, default_value = "reelcast.db", env = "REELCAST_DB")]
     pub db: PathBuf,
 
-    /// Tantivy search index directory
-    #[arg(long, default_value = "reelcast.idx", env = "REELCAST_INDEX")]
-    pub index: PathBuf,
-
     /// Scan libraries on startup
     #[arg(long, default_value_t = true)]
     pub scan_on_start: bool,
@@ -33,4 +29,22 @@ pub struct Config {
     /// Log level (trace, debug, info, warn, error)
     #[arg(long, default_value = "info", env = "RUST_LOG")]
     pub log_level: String,
+
+    /// TLS certificate (PEM) — enables HTTPS when provided
+    #[arg(long, env = "REELCAST_CERT")]
+    pub cert: Option<PathBuf>,
+
+    /// TLS private key (PEM) — required when --cert is set
+    #[arg(long, env = "REELCAST_KEY")]
+    pub key: Option<PathBuf>,
+}
+
+impl Config {
+    pub fn tls_enabled(&self) -> bool {
+        self.cert.is_some() && self.key.is_some()
+    }
+
+    pub fn scheme(&self) -> &'static str {
+        if self.tls_enabled() { "https" } else { "http" }
+    }
 }

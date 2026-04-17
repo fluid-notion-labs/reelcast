@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CERT_DIR="${HOME}/.config/reelcast"
+CERT="${CERT_DIR}/cert.pem"
+KEY="${CERT_DIR}/key.pem"
+
+usage() {
+  cat << EOF
+Usage: scripts/plz <command>
+
+Commands:
+  tls           Generate self-signed cert (prompts for LAN IP)
+  trust         Print instructions to trust cert on macOS
+  build         cargo build --release
+  run           Run reelcast (pass extra args after --)
+  clean         cargo clean
+  help          Show this help
+EOF
+}
+
+cmd_tls() {
+  mkdir -p "$CERT_DIR"
+
+  # Try to auto-detect LAN IP
+  detected=$(ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if ($i=="src") print $(i+1)}' || true)
+
+  echo "Detected LAN IP: ${detected:-none}"
+  read -rp "Enter server LAN IP [${detected}]: " ip
+  ip="${ip:-$detected}"
+
+  if [[ -z "$ip" ]]; then
+    echo "Error: no IP provided" >&2
+    exit 1
+  fi
+
+  echo "Generating self-signed cert for IP: $ip"
+  openssl req -x509 -newkey rsa:4096 \
+    -keyout "$KEY" \
+    -out "$CERT" \
+    -days 3650 -nodes \
+    -subj "/CN=reelcast" \
+    -addext "subjectAltName=IP:${ip},IP:127.0.0.1,DNS:localhost"
+
+  chmod 600 "$KEY"
+  echo ""
+  echo "Done:"
+  echo "  cert: $CERT"
+  echo "  key:  $KEY"
+  echo ""
+  echo "Run 'scripts/plz trust' for macOS trust instructions."
+}
+
+cmd_trust() {
+  if [[ ! -f "$CERT" ]]; then
+    echo "No cert found at $CERT — run 'scripts/plz tls' first." >&2
+    exit 1
+  fi
+
+  cat << EOF
+
+── Trust reelcast cert on macOS ──────────────────────────────
+
+1. Copy cert to your Mac:
+     scp ${USER}@$(hostname -I | awk '{print $1}'):${CERT} ~/Downloads/reelcast.pem
+
+2. Double-click ~/Downloads/reelcast.pem in Finder
+   → Keychain Access opens, adds to login keychain
+
+3. Find "reelcast" in Keychain Access
+   → double-click → Trust → When using this certificate: Always Trust
+
+4. Close dialog (enter password when prompted)
+
+That's it. https://$(hostname -I | awk '{print $1}'):3000 will work in Safari/Chrome/Firefox.
+
+──────────────────────────────────────────────────────────────
+EOF
+}
+
+cmd_build() {
+  cargo build --release "$@"
+}
+
+cmd_run() {
+  local tls_args=()
+  if [[ -f "$CERT" && -f "$KEY" ]]; then
+    tls_args=(--cert "$CERT" --key "$KEY")
+    echo "TLS enabled — https"
+  else
+    echo "No cert found — running plain HTTP (run 'scripts/plz tls' to enable HTTPS)"
+  fi
+  cargo run --release -- "${tls_args[@]}" "$@"
+}
+
+cmd_clean() {
+  cargo clean
+}
+
+case "${1:-help}" in
+  tls)    cmd_tls ;;
+  trust)  cmd_trust ;;
+  build)  shift; cmd_build "$@" ;;
+  run)    shift; cmd_run "$@" ;;
+  clean)  cmd_clean ;;
+  help|*) usage ;;
+esac
