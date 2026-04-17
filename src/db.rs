@@ -21,6 +21,13 @@ pub struct MediaFile {
     pub height: Option<i64>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct PlayHistory {
+    pub media_id: String,
+    pub title: String,
+    pub played_at: i64, // unix timestamp
+}
+
 pub async fn open(db_path: &Path) -> Result<SqlitePool> {
     let url = format!("sqlite://{}?mode=rwc", db_path.display());
     let pool = SqlitePoolOptions::new()
@@ -48,6 +55,14 @@ async fn migrate(pool: &SqlitePool) -> Result<()> {
             height        INTEGER
         );
         CREATE INDEX IF NOT EXISTS idx_media_title ON media_files(title);
+
+        CREATE TABLE IF NOT EXISTS play_history (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            media_id  TEXT NOT NULL,
+            title     TEXT NOT NULL,
+            played_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_play_history_time ON play_history(played_at DESC);
         "#,
     )
     .execute(pool)
@@ -91,35 +106,61 @@ pub async fn upsert(pool: &SqlitePool, m: &MediaFile) -> Result<()> {
 }
 
 pub async fn get_by_id(pool: &SqlitePool, id: &str) -> Result<Option<MediaFile>> {
-    let row = sqlx::query_as::<_, MediaFile>(
-        "SELECT * FROM media_files WHERE id = ?",
-    )
-    .bind(id)
-    .fetch_optional(pool)
-    .await?;
-    Ok(row)
+    Ok(sqlx::query_as::<_, MediaFile>("SELECT * FROM media_files WHERE id = ?")
+        .bind(id)
+        .fetch_optional(pool)
+        .await?)
 }
 
 pub async fn get_all(pool: &SqlitePool) -> Result<Vec<MediaFile>> {
-    let rows = sqlx::query_as::<_, MediaFile>("SELECT * FROM media_files ORDER BY title")
+    Ok(sqlx::query_as::<_, MediaFile>("SELECT * FROM media_files ORDER BY title")
         .fetch_all(pool)
-        .await?;
-    Ok(rows)
+        .await?)
 }
 
 pub async fn search_by_title(pool: &SqlitePool, q: &str) -> Result<Vec<MediaFile>> {
     let pattern = format!("%{}%", q);
-    let rows = sqlx::query_as::<_, MediaFile>(
+    Ok(sqlx::query_as::<_, MediaFile>(
         "SELECT * FROM media_files WHERE title LIKE ? ORDER BY title LIMIT 50",
     )
     .bind(pattern)
     .fetch_all(pool)
+    .await?)
+}
+
+pub async fn record_play(pool: &SqlitePool, media_id: &str, title: &str) -> Result<()> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    sqlx::query(
+        "INSERT INTO play_history (media_id, title, played_at) VALUES (?, ?, ?)",
+    )
+    .bind(media_id)
+    .bind(title)
+    .bind(now)
+    .execute(pool)
     .await?;
-    Ok(rows)
+    Ok(())
+}
+
+pub async fn recent_plays(pool: &SqlitePool, limit: i64) -> Result<Vec<PlayHistory>> {
+    // Distinct by media_id, most recent play per title
+    Ok(sqlx::query_as::<_, PlayHistory>(
+        r#"
+        SELECT media_id, title, MAX(played_at) as played_at
+        FROM play_history
+        GROUP BY media_id
+        ORDER BY played_at DESC
+        LIMIT ?
+        "#,
+    )
+    .bind(limit)
+    .fetch_all(pool)
+    .await?)
 }
 
 pub async fn delete_missing(pool: &SqlitePool) -> Result<u64> {
-    // Remove DB entries for files that no longer exist on disk
     let all = get_all(pool).await?;
     let mut removed = 0u64;
     for m in all {

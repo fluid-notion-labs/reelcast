@@ -9,84 +9,174 @@
   body { font-family: system-ui, sans-serif; background: #0f0f0f; color: #e0e0e0; min-height: 100vh; padding: 2rem; }
   h1 { font-size: 1.6rem; font-weight: 600; color: #fff; margin-bottom: 1.5rem; letter-spacing: -0.02em; }
   h1 span { color: #f97316; }
-  #search-bar { display: flex; gap: 0.5rem; margin-bottom: 2rem; }
+
+  /* Search */
+  #search-bar { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; }
   #q { flex: 1; padding: 0.6rem 1rem; border-radius: 6px; border: 1px solid #333; background: #1a1a1a; color: #e0e0e0; font-size: 1rem; outline: none; }
   #q:focus { border-color: #f97316; }
-  button { padding: 0.6rem 1.2rem; border-radius: 6px; border: none; background: #f97316; color: #fff; font-size: 1rem; cursor: pointer; }
-  button:hover { background: #ea6a0a; }
-  #results { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; }
+  button.search-btn { padding: 0.6rem 1.2rem; border-radius: 6px; border: none; background: #f97316; color: #fff; font-size: 1rem; cursor: pointer; }
+  button.search-btn:hover { background: #ea6a0a; }
+
+  /* Recent searches */
+  #recent-searches { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 1.5rem; min-height: 1rem; }
+  .chip { padding: 0.25rem 0.75rem; border-radius: 999px; background: #222; border: 1px solid #333; color: #aaa; font-size: 0.8rem; cursor: pointer; }
+  .chip:hover { background: #2a2a2a; color: #fff; border-color: #f97316; }
+
+  /* Section headers */
+  .section-title { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: #555; margin-bottom: 0.75rem; }
+
+  /* Recently played shelf */
+  #recently-played-section { margin-bottom: 2rem; }
+  #recently-played { display: flex; gap: 0.75rem; overflow-x: auto; padding-bottom: 0.5rem; }
+  #recently-played::-webkit-scrollbar { height: 4px; }
+  #recently-played::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+  .recent-card { flex: 0 0 200px; background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 8px; padding: 0.75rem; }
+  .recent-card h3 { font-size: 0.88rem; font-weight: 600; margin-bottom: 0.25rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .recent-card .time { font-size: 0.72rem; color: #555; margin-bottom: 0.6rem; }
+  .recent-card .actions { display: flex; gap: 0.4rem; }
+
+  /* Results grid */
+  #status { color: #555; font-size: 0.85rem; margin-bottom: 0.75rem; }
+  #results { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem; }
   .card { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 8px; padding: 1rem; }
   .card h2 { font-size: 1rem; font-weight: 600; margin-bottom: 0.3rem; }
-  .meta { font-size: 0.78rem; color: #888; margin-bottom: 0.8rem; }
-  .actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
-  .btn-xspf { flex: 1; padding: 0.4rem 0.6rem; text-align: center; border-radius: 5px; background: #f97316; color: #fff; text-decoration: none; font-size: 0.82rem; white-space: nowrap; }
-  .btn-copy { flex: 1; padding: 0.4rem 0.6rem; text-align: center; border-radius: 5px; background: #2a2a2a; color: #ccc; border: none; font-size: 0.82rem; cursor: pointer; white-space: nowrap; }
-  .btn-xspf:hover { background: #ea6a0a; }
-  .btn-copy:hover  { background: #333; color: #fff; }
-  .btn-copy.copied { background: #166534; color: #86efac; }
-  #status { color: #888; font-size: 0.9rem; margin-bottom: 1rem; }
+  .meta { font-size: 0.78rem; color: #666; margin-bottom: 0.8rem; }
+  .actions { display: flex; gap: 0.5rem; }
+  .btn-play { flex: 1; padding: 0.4rem 0.6rem; text-align: center; border-radius: 5px; background: #f97316; color: #fff; text-decoration: none; font-size: 0.82rem; white-space: nowrap; }
+  .btn-copy { flex: 1; padding: 0.4rem 0.6rem; text-align: center; border-radius: 5px; background: #222; color: #aaa; border: none; font-size: 0.82rem; cursor: pointer; white-space: nowrap; }
+  .btn-play:hover { background: #ea6a0a; }
+  .btn-copy:hover { background: #2a2a2a; color: #fff; }
+  .btn-copy.copied { background: #14532d; color: #86efac; }
+  .btn-sm { padding: 0.3rem 0.5rem; font-size: 0.75rem; }
 </style>
 </head>
 <body>
 <h1>Reel<span>cast</span></h1>
+
 <div id="search-bar">
   <input id="q" type="text" placeholder="Search movies…" autofocus>
-  <button onclick="doSearch()">Search</button>
+  <button class="search-btn" onclick="doSearch()">Search</button>
 </div>
+<div id="recent-searches"></div>
+
+<div id="recently-played-section" style="display:none">
+  <div class="section-title">Recently Played</div>
+  <div id="recently-played"></div>
+</div>
+
 <div id="status"></div>
+<div id="results-title" class="section-title" style="display:none">Results</div>
 <div id="results"></div>
+
 <script>
-  function fmt_duration(secs) {
-    if (!secs) return '';
-    const h = Math.floor(secs / 3600);
-    const m = Math.floor((secs % 3600) / 60);
+  // ── Helpers ──────────────────────────────────────────────────────────────
+  function fmtDur(s) {
+    if (!s) return '';
+    const h = Math.floor(s/3600), m = Math.floor((s%3600)/60);
     return h > 0 ? `${h}h ${m}m` : `${m}m`;
   }
-  function fmt_size(bytes) {
-    if (bytes > 1e9) return (bytes / 1e9).toFixed(1) + ' GB';
-    return (bytes / 1e6).toFixed(0) + ' MB';
+  function fmtSize(b) {
+    return b > 1e9 ? (b/1e9).toFixed(1)+' GB' : (b/1e6).toFixed(0)+' MB';
   }
+  function fmtAgo(ts) {
+    const diff = Math.floor(Date.now()/1000) - ts;
+    if (diff < 60) return 'just now';
+    if (diff < 3600) return Math.floor(diff/60)+'m ago';
+    if (diff < 86400) return Math.floor(diff/3600)+'h ago';
+    return Math.floor(diff/86400)+'d ago';
+  }
+
+  // ── Clipboard ─────────────────────────────────────────────────────────────
   function copyUrl(btn, url) {
-    // clipboard API requires HTTPS — fallback for plain HTTP LAN
+    const doFlash = () => {
+      btn.textContent = '✓ Copied'; btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = '⎘ Copy URL'; btn.classList.remove('copied'); }, 2000);
+    };
     if (navigator.clipboard && window.isSecureContext) {
-      navigator.clipboard.writeText(url).then(() => flash(btn));
+      navigator.clipboard.writeText(url).then(doFlash);
     } else {
       const ta = document.createElement('textarea');
-      ta.value = url;
-      ta.style.cssText = 'position:fixed;opacity:0';
-      document.body.appendChild(ta);
-      ta.focus(); ta.select();
-      document.execCommand('copy');
-      document.body.removeChild(ta);
-      flash(btn);
+      ta.value = url; ta.style.cssText = 'position:fixed;opacity:0';
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      document.execCommand('copy'); document.body.removeChild(ta);
+      doFlash();
     }
   }
-  function flash(btn) {
-    btn.textContent = '✓ Copied';
-    btn.classList.add('copied');
-    setTimeout(() => { btn.textContent = '⎘ Copy URL'; btn.classList.remove('copied'); }, 2000);
+
+  // ── Recent Searches (localStorage) ───────────────────────────────────────
+  const SEARCH_KEY = 'reelcast_searches';
+  function getRecentSearches() {
+    try { return JSON.parse(localStorage.getItem(SEARCH_KEY) || '[]'); } catch { return []; }
   }
-  async function doSearch() {
-    const q = document.getElementById('q').value.trim();
-    const url = q ? `/search?q=${encodeURIComponent(q)}` : '/search';
-    const status = document.getElementById('status');
-    status.textContent = 'Searching…';
-    const res = await fetch(url);
+  function saveSearch(q) {
+    if (!q) return;
+    let searches = getRecentSearches().filter(s => s !== q);
+    searches.unshift(q);
+    searches = searches.slice(0, 10);
+    localStorage.setItem(SEARCH_KEY, JSON.stringify(searches));
+    renderRecentSearches();
+  }
+  function renderRecentSearches() {
+    const searches = getRecentSearches();
+    const el = document.getElementById('recent-searches');
+    el.innerHTML = searches.map(s =>
+      `<span class="chip" onclick="runSearch('${s.replace(/'/g,"\\'")}')">⌕ ${s}</span>`
+    ).join('');
+  }
+
+  // ── Recently Played (server) ──────────────────────────────────────────────
+  async function loadRecentlyPlayed() {
+    const res = await fetch('/recent');
     const items = await res.json();
-    status.textContent = `${items.length} result${items.length !== 1 ? 's' : ''}`;
-    document.getElementById('results').innerHTML = items.map(m => `
-      <div class="card">
-        <h2>${m.title}</h2>
-        <div class="meta">
-          ${m.year ? m.year + ' · ' : ''}${fmt_duration(m.duration_secs)}${m.resolution ? ' · ' + m.resolution : ''} · ${fmt_size(m.size_bytes)}
-        </div>
+    const section = document.getElementById('recently-played-section');
+    if (!items.length) { section.style.display = 'none'; return; }
+    section.style.display = 'block';
+    document.getElementById('recently-played').innerHTML = items.map(r => `
+      <div class="recent-card">
+        <h3 title="${r.title}">${r.title}</h3>
+        <div class="time">${fmtAgo(r.played_at)}</div>
         <div class="actions">
-          <a class="btn-xspf" href="${m.play_url}" download>▶ Open in VLC</a>
-          <button class="btn-copy" onclick="copyUrl(this, '${m.file_url}')">⎘ Copy URL</button>
+          <a class="btn-play btn-sm" href="${r.play_url}" download>▶ Play</a>
+          <button class="btn-copy btn-sm" onclick="copyUrl(this, '${r.file_url}')">⎘ URL</button>
         </div>
       </div>`).join('');
   }
+
+  // ── Search ────────────────────────────────────────────────────────────────
+  function cardHtml(m) {
+    const meta = [m.year, fmtDur(m.duration_secs), m.resolution, fmtSize(m.size_bytes)].filter(Boolean).join(' · ');
+    return `
+      <div class="card">
+        <h2>${m.title}</h2>
+        <div class="meta">${meta}</div>
+        <div class="actions">
+          <a class="btn-play" href="${m.play_url}" download>▶ Open in VLC</a>
+          <button class="btn-copy" onclick="copyUrl(this, '${m.file_url}')">⎘ Copy URL</button>
+        </div>
+      </div>`;
+  }
+
+  async function runSearch(q) {
+    document.getElementById('q').value = q;
+    await doSearch();
+  }
+
+  async function doSearch() {
+    const q = document.getElementById('q').value.trim();
+    const url = q ? `/search?q=${encodeURIComponent(q)}` : '/search';
+    document.getElementById('status').textContent = 'Searching…';
+    const res = await fetch(url);
+    const items = await res.json();
+    if (q) saveSearch(q);
+    document.getElementById('status').textContent = `${items.length} result${items.length !== 1 ? 's' : ''}`;
+    document.getElementById('results-title').style.display = items.length ? 'block' : 'none';
+    document.getElementById('results').innerHTML = items.map(cardHtml).join('');
+  }
+
+  // ── Init ──────────────────────────────────────────────────────────────────
   document.getElementById('q').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+  renderRecentSearches();
+  loadRecentlyPlayed();
   doSearch();
 </script>
 </body>

@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
 use axum::{
+    Router,
     extract::{Path, Query, State},
-    http::{header, HeaderMap},
+    http::HeaderMap,
     response::{IntoResponse, Response},
-    routing::get,
-    Json, Router,
+    routing::{get, post},
+    Json,
 };
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
@@ -30,6 +31,7 @@ pub fn router(state: AppState) -> Router {
         .route("/", get(index))
         .route("/media", get(list_media))
         .route("/search", get(search))
+        .route("/recent", get(recent_played))
         .route("/play/:id", get(play_xspf))
         .route("/playlist/:id", get(play_m3u))
         .route("/file/:id", get(serve_file))
@@ -61,11 +63,8 @@ struct MediaItem {
     size_bytes: i64,
     container: Option<String>,
     resolution: Option<String>,
-    /// Direct HTTP stream URL — paste into VLC: Media → Open Network Stream
     file_url: String,
-    /// XSPF playlist URL
     play_url: String,
-    /// M3U playlist URL
     playlist_url: String,
 }
 
@@ -90,13 +89,19 @@ impl MediaItem {
     }
 }
 
+#[derive(Serialize)]
+struct RecentItem {
+    media_id: String,
+    title: String,
+    played_at: i64,
+    file_url: String,
+    play_url: String,
+}
+
 async fn list_media(State(state): State<AppState>) -> Result<impl IntoResponse> {
     let base_url = base_url(&state.config);
-    let media = db::get_all(&state.pool).await?;
-    let items: Vec<_> = media
-        .into_iter()
-        .map(|m| MediaItem::from_media(m, &base_url))
-        .collect();
+    let items: Vec<_> = db::get_all(&state.pool).await?
+        .into_iter().map(|m| MediaItem::from_media(m, &base_url)).collect();
     Ok(Json(items))
 }
 
@@ -107,42 +112,62 @@ async fn search(
     let base_url = base_url(&state.config);
     let media = match params.q.as_deref().filter(|q| !q.is_empty()) {
         Some(q) => db::search_by_title(&state.pool, q).await?,
-        None => db::get_all(&state.pool).await?,
+        None    => db::get_all(&state.pool).await?,
     };
-    let items: Vec<_> = media
-        .into_iter()
-        .map(|m| MediaItem::from_media(m, &base_url))
-        .collect();
+    let items: Vec<_> = media.into_iter().map(|m| MediaItem::from_media(m, &base_url)).collect();
     Ok(Json(items))
 }
 
-/// XSPF playlist — open URL directly in VLC (File → Open Network Stream)
-async fn play_xspf(State(state): State<AppState>, Path(id): Path<String>) -> Result<Response> {
-    let m = get_media_or_404(&state.pool, &id).await?;
-    let title = m.title.clone();
+async fn recent_played(State(state): State<AppState>) -> Result<impl IntoResponse> {
     let base_url = base_url(&state.config);
+    let rows = db::recent_plays(&state.pool, 20).await?;
+    let items: Vec<_> = rows.into_iter().map(|r| RecentItem {
+        file_url: format!("{}/file/{}", base_url, r.media_id),
+        play_url: format!("{}/play/{}", base_url, r.media_id),
+        media_id: r.media_id,
+        title: r.title,
+        played_at: r.played_at,
+    }).collect();
+    Ok(Json(items))
+}
+
+async fn play_xspf(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Response> {
+    let m = get_media_or_404(&state.pool, &id).await?;
+    // Record play
+    let _ = db::record_play(&state.pool, &m.id, &m.title).await;
+    let base_url = base_url(&state.config);
+    let disposition = format!("attachment; filename=\"{}.xspf\"", m.title);
     let playlist = vlc::xspf(&[m], &base_url);
-    let disposition = format!("attachment; filename=\"{}.xspf\"", title);
     Ok((
         [
-            (header::CONTENT_TYPE, "application/xspf+xml"),
-            (header::CONTENT_DISPOSITION, disposition.as_str()),
+            (axum::http::header::CONTENT_TYPE, "application/xspf+xml"),
+            (axum::http::header::CONTENT_DISPOSITION, disposition.as_str()),
         ],
         playlist,
-    )
-        .into_response())
+    ).into_response())
 }
 
-/// M3U playlist
-async fn play_m3u(State(state): State<AppState>, Path(id): Path<String>) -> Result<Response> {
+async fn play_m3u(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Response> {
     let m = get_media_or_404(&state.pool, &id).await?;
+    let _ = db::record_play(&state.pool, &m.id, &m.title).await;
     let base_url = base_url(&state.config);
+    let disposition = format!("attachment; filename=\"{}.m3u\"", m.title);
     let playlist = vlc::m3u_single(&m, &base_url);
-    Ok(([(header::CONTENT_TYPE, "audio/x-mpegurl")], playlist).into_response())
+    Ok((
+        [
+            (axum::http::header::CONTENT_TYPE, "audio/x-mpegurl"),
+            (axum::http::header::CONTENT_DISPOSITION, disposition.as_str()),
+        ],
+        playlist,
+    ).into_response())
 }
 
-/// Zero-copy file serving — tower-http ServeFile handles Range, ETag,
-/// Content-Type, and calls sendfile(2) on Linux.
 async fn serve_file(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -150,26 +175,18 @@ async fn serve_file(
 ) -> Result<Response> {
     let m = get_media_or_404(&state.pool, &id).await?;
     let path = std::path::PathBuf::from(&m.path);
-
     if !path.exists() {
         return Err(ReelcastError::MediaNotFound { id });
     }
-
     let mut req = axum::http::Request::builder()
         .body(axum::body::Body::empty())
         .unwrap();
     *req.headers_mut() = headers;
-
     ServeFile::new(&path)
         .oneshot(req)
         .await
         .map(|r| r.map(axum::body::Body::new).into_response())
-        .map_err(|e| {
-            ReelcastError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                e.to_string(),
-            ))
-        })
+        .map_err(|e| ReelcastError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))
 }
 
 async fn get_media_or_404(pool: &SqlitePool, id: &str) -> Result<MediaFile> {
@@ -179,8 +196,6 @@ async fn get_media_or_404(pool: &SqlitePool, id: &str) -> Result<MediaFile> {
 }
 
 fn base_url(config: &Config) -> String {
-    // Use actual LAN IP so copy-pasted URLs work from other devices.
-    // Falls back to configured host (e.g. localhost) if detection fails.
     let host = crate::net::local_ip()
         .map(|ip| ip.to_string())
         .unwrap_or_else(|| config.host.clone());
