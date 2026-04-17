@@ -30,6 +30,10 @@ pub struct Config {
     #[arg(long, default_value = "info", env = "RUST_LOG")]
     pub log_level: String,
 
+    /// HTTP port for VLC media access (used when TLS is enabled)
+    #[arg(long, default_value = "3001", env = "REELCAST_MEDIA_PORT")]
+    pub media_port: u16,
+
     /// TLS certificate (PEM) — enables HTTPS when provided
     #[arg(long, env = "REELCAST_CERT")]
     pub cert: Option<PathBuf>,

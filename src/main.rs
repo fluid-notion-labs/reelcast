@@ -29,14 +29,14 @@ async fn main() -> anyhow::Result<()> {
 
     let pool = db::open(&config.db).await?;
 
-    // Populate cache immediately from DB — server is ready to serve before any scan
+    // Populate cache immediately from DB
     let media_cache = MediaCache::new();
     let existing = db::get_all(&pool).await?;
     let preloaded = existing.len();
     media_cache.set(existing).await;
     info!("Loaded {} files from DB (serving immediately)", preloaded);
 
-    // Background scan — updates DB + cache without blocking startup
+    // Background scan
     {
         let pool = pool.clone();
         let cache = media_cache.clone();
@@ -44,46 +44,61 @@ async fn main() -> anyhow::Result<()> {
         tokio::spawn(async move {
             info!("Background scan started");
             match scanner::scan_library(&pool, &library).await {
-                Ok(count) => {
-                    match db::get_all(&pool).await {
-                        Ok(files) => {
-                            cache.set(files).await;
-                            info!("Background scan complete — {} files indexed", count);
-                        }
-                        Err(e) => tracing::error!("Cache refresh failed: {}", e),
+                Ok(count) => match db::get_all(&pool).await {
+                    Ok(files) => {
+                        cache.set(files).await;
+                        info!("Background scan complete — {} files indexed", count);
                     }
-                }
+                    Err(e) => tracing::error!("Cache refresh failed: {}", e),
+                },
                 Err(e) => tracing::error!("Background scan failed: {}", e),
             }
         });
     }
 
-    let addr: std::net::SocketAddr = format!("{}:{}", config.host, config.port).parse()?;
     let state = AppState {
         pool,
         media_cache,
         config: Arc::new(config.clone()),
     };
-    let app = serve::router(state);
 
-    print_urls(&config, addr);
+    print_urls(&config);
 
     if config.tls_enabled() {
-        tls::serve(app, addr, config).await?;
+        // HTTPS on main port, plain HTTP on media_port (for VLC)
+        let https_addr: std::net::SocketAddr =
+            format!("{}:{}", config.host, config.port).parse()?;
+        let http_addr: std::net::SocketAddr =
+            format!("{}:{}", config.host, config.media_port).parse()?;
+
+        // HTTP listener for VLC file access — files + playlists only
+        let http_state = state.clone();
+        tokio::spawn(async move {
+            info!("HTTP media port on http://{}", http_addr);
+            let app = serve::file_router(http_state);
+            let listener = tokio::net::TcpListener::bind(http_addr).await.unwrap();
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        tls::serve(serve::router(state), https_addr, config).await?;
     } else {
-        axum::serve(tokio::net::TcpListener::bind(addr).await?, app).await?;
+        let addr: std::net::SocketAddr =
+            format!("{}:{}", config.host, config.port).parse()?;
+        info!("Listening on http://{}", addr);
+        axum::serve(tokio::net::TcpListener::bind(addr).await?, serve::router(state)).await?;
     }
 
     Ok(())
 }
 
-fn print_urls(config: &Config, _addr: std::net::SocketAddr) {
+fn print_urls(config: &Config) {
     let scheme = config.scheme();
+    let ip = net::local_ip().map(|ip| ip.to_string()).unwrap_or_else(|| config.host.clone());
+    info!("  → {}://{}:{}", scheme, ip, config.port);
     info!("  → {}://localhost:{}", scheme, config.port);
-    if let Some(ip) = net::local_ip() {
-        info!("  → {}://{}:{}", scheme, ip, config.port);
-    }
-    if !config.tls_enabled() {
+    if config.tls_enabled() {
+        info!("  (VLC media port: http://{}:{})", ip, config.media_port);
+    } else {
         info!("  (run scripts/gencert to enable HTTPS)");
     }
 }

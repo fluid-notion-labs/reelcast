@@ -45,6 +45,16 @@ pub fn router(state: AppState) -> Router {
         .with_state(state)
 }
 
+/// Minimal HTTP router for VLC — file serving and playlists only, no TLS required
+pub fn file_router(state: AppState) -> Router {
+    Router::new()
+        .route("/file/:id", get(serve_file))
+        .route("/play/:id", get(play_xspf))
+        .route("/playlist/:id", get(play_m3u))
+        .layer(CorsLayer::permissive())
+        .with_state(state)
+}
+
 async fn health() -> impl IntoResponse {
     Json(serde_json::json!({ "status": "ok", "version": env!("CARGO_PKG_VERSION") }))
 }
@@ -237,10 +247,11 @@ fn base_url(config: &Config) -> String {
 }
 
 /// File URLs always use plain HTTP — VLC doesn't trust self-signed certs.
-/// The browser UI can be HTTPS (for clipboard API), VLC streams over HTTP.
+/// When TLS is enabled, points to the dedicated HTTP media_port.
 fn file_base_url(config: &Config) -> String {
     let host = crate::net::local_ip()
         .map(|ip| ip.to_string())
         .unwrap_or_else(|| config.host.clone());
-    format!("http://{}:{}", host, config.port)
+    let port = if config.tls_enabled() { config.media_port } else { config.port };
+    format!("http://{}:{}", host, port)
 }
