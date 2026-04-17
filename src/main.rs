@@ -34,14 +34,53 @@ async fn main() -> anyhow::Result<()> {
     let state = AppState { pool, config: Arc::new(config.clone()) };
     let app = serve::router(state);
 
+    print_urls(&config, addr);
+
     if config.tls_enabled() {
         tls::serve(app, addr, config).await?;
     } else {
-        info!("Listening on http://{} (run scripts/gencert to enable HTTPS)", addr);
         axum::serve(tokio::net::TcpListener::bind(addr).await?, app).await?;
     }
 
     Ok(())
+}
+
+fn print_urls(config: &Config, addr: std::net::SocketAddr) {
+    let scheme = config.scheme();
+
+    // Always show localhost
+    info!("  → {}://localhost:{}", scheme, config.port);
+
+    // Show all non-loopback IPv4 interfaces
+    if let Ok(ifaces) = local_ip_addrs() {
+        for ip in ifaces {
+            info!("  → {}://{}:{}", scheme, ip, config.port);
+        }
+    }
+
+    if !config.tls_enabled() {
+        info!("  (run scripts/gencert to enable HTTPS)");
+    }
+}
+
+fn local_ip_addrs() -> std::io::Result<Vec<std::net::IpAddr>> {
+    // Parse /proc/net/if_inet6 + /proc/net/fib_trie for a lightweight
+    // interface scan without pulling in extra deps.
+    // Simpler: just connect a UDP socket — the OS picks the outbound IP.
+    let mut addrs = Vec::new();
+
+    // Primary outbound IP via UDP trick
+    if let Ok(sock) = std::net::UdpSocket::bind("0.0.0.0:0") {
+        let _ = sock.connect("8.8.8.8:80");
+        if let Ok(local) = sock.local_addr() {
+            let ip = local.ip();
+            if !ip.is_loopback() {
+                addrs.push(ip);
+            }
+        }
+    }
+
+    Ok(addrs)
 }
 
 mod tls {
