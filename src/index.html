@@ -19,10 +19,10 @@
   .card h2 { font-size: 1rem; font-weight: 600; margin-bottom: 0.3rem; }
   .meta { font-size: 0.78rem; color: #888; margin-bottom: 0.8rem; }
   .actions { display: flex; gap: 0.5rem; }
-  .btn-play { flex: 1; padding: 0.4rem; text-align: center; border-radius: 5px; background: #f97316; color: #fff; text-decoration: none; font-size: 0.85rem; }
-  .btn-m3u  { flex: 1; padding: 0.4rem; text-align: center; border-radius: 5px; background: #2a2a2a; color: #ccc; text-decoration: none; font-size: 0.85rem; }
+  .btn-play { flex: 1; padding: 0.4rem; text-align: center; border-radius: 5px; background: #f97316; color: #fff; text-decoration: none; font-size: 0.85rem; cursor: pointer; border: none; }
+  .btn-copy { flex: 1; padding: 0.4rem; text-align: center; border-radius: 5px; background: #2a2a2a; color: #ccc; text-decoration: none; font-size: 0.85rem; cursor: pointer; border: none; }
   .btn-play:hover { background: #ea6a0a; }
-  .btn-m3u:hover  { background: #333; color: #fff; }
+  .btn-copy:hover { background: #333; color: #fff; }
   #status { color: #888; font-size: 0.9rem; margin-bottom: 1rem; }
 </style>
 </head>
@@ -41,10 +41,15 @@
     const m = Math.floor((secs % 3600) / 60);
     return h > 0 ? `${h}h ${m}m` : `${m}m`;
   }
-
   function fmt_size(bytes) {
     if (bytes > 1e9) return (bytes / 1e9).toFixed(1) + ' GB';
     return (bytes / 1e6).toFixed(0) + ' MB';
+  }
+
+  function copyUrl(url) {
+    navigator.clipboard.writeText(url).then(() => {
+      alert('URL copied — paste into VLC: Media → Open Network Stream');
+    });
   }
 
   async function doSearch() {
@@ -56,6 +61,7 @@
     const items = await res.json();
     status.textContent = `${items.length} result${items.length !== 1 ? 's' : ''}`;
     const el = document.getElementById('results');
+    // file_url is the direct stream URL — paste into VLC Network Stream
     el.innerHTML = items.map(m => `
       <div class="card">
         <h2>${m.title}</h2>
@@ -63,13 +69,12 @@
           ${m.year ? m.year + ' · ' : ''}${fmt_duration(m.duration_secs)}${m.resolution ? ' · ' + m.resolution : ''} · ${fmt_size(m.size_bytes)}
         </div>
         <div class="actions">
-          <a class="btn-play" href="${m.play_url}">▶ Open in VLC</a>
-          <a class="btn-m3u"  href="${m.playlist_url}" download>M3U</a>
+          <a class="btn-play" href="${m.file_url}">⬇ Download / Open</a>
+          <button class="btn-copy" onclick="copyUrl('${m.file_url}')">📋 Copy URL</button>
         </div>
       </div>`).join('');
   }
 
-  // Load all on start
   document.getElementById('q').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
   doSearch();
 </script>

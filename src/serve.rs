@@ -3,7 +3,7 @@ use std::sync::Arc;
 use axum::{
     Router,
     extract::{Path, Query, State},
-    http::HeaderMap,
+    http::{HeaderMap, header},
     response::{IntoResponse, Response},
     routing::get,
     Json,
@@ -62,7 +62,11 @@ struct MediaItem {
     size_bytes: i64,
     container: Option<String>,
     resolution: Option<String>,
+    /// Direct HTTP stream URL — paste into VLC: Media → Open Network Stream
+    file_url: String,
+    /// XSPF playlist URL
     play_url: String,
+    /// M3U playlist URL  
     playlist_url: String,
 }
 
@@ -73,6 +77,7 @@ impl MediaItem {
             _ => None,
         };
         Self {
+            file_url: format!("{}/file/{}", base_url, m.id),
             play_url: format!("{}/play/{}", base_url, m.id),
             playlist_url: format!("{}/playlist/{}", base_url, m.id),
             id: m.id,
@@ -89,10 +94,7 @@ impl MediaItem {
 async fn list_media(State(state): State<AppState>) -> Result<impl IntoResponse> {
     let base_url = base_url(&state.config);
     let media = db::get_all(&state.pool).await?;
-    let items: Vec<_> = media
-        .into_iter()
-        .map(|m| MediaItem::from_media(m, &base_url))
-        .collect();
+    let items: Vec<_> = media.into_iter().map(|m| MediaItem::from_media(m, &base_url)).collect();
     Ok(Json(items))
 }
 
@@ -105,13 +107,11 @@ async fn search(
         Some(q) => db::search_by_title(&state.pool, q).await?,
         None => db::get_all(&state.pool).await?,
     };
-    let items: Vec<_> = media
-        .into_iter()
-        .map(|m| MediaItem::from_media(m, &base_url))
-        .collect();
+    let items: Vec<_> = media.into_iter().map(|m| MediaItem::from_media(m, &base_url)).collect();
     Ok(Json(items))
 }
 
+/// XSPF playlist — open URL directly in VLC (File → Open Network Stream)
 async fn play_xspf(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -120,12 +120,12 @@ async fn play_xspf(
     let base_url = base_url(&state.config);
     let playlist = vlc::xspf(&[m], &base_url);
     Ok((
-        [(axum::http::header::CONTENT_TYPE, "application/xspf+xml")],
+        [(header::CONTENT_TYPE, "application/xspf+xml")],
         playlist,
-    )
-        .into_response())
+    ).into_response())
 }
 
+/// M3U playlist
 async fn play_m3u(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -134,16 +134,9 @@ async fn play_m3u(
     let base_url = base_url(&state.config);
     let playlist = vlc::m3u_single(&m, &base_url);
     Ok((
-        [
-            (axum::http::header::CONTENT_TYPE, "audio/x-mpegurl"),
-            (
-                axum::http::header::CONTENT_DISPOSITION,
-                &format!("attachment; filename=\"{}.m3u\"", m.title),
-            ),
-        ],
+        [(header::CONTENT_TYPE, "audio/x-mpegurl")],
         playlist,
-    )
-        .into_response())
+    ).into_response())
 }
 
 /// Zero-copy file serving — tower-http ServeFile handles Range, ETag,
@@ -160,7 +153,6 @@ async fn serve_file(
         return Err(ReelcastError::MediaNotFound { id });
     }
 
-    // Build a minimal request carrying the original headers (Range, etc.)
     let mut req = axum::http::Request::builder()
         .body(axum::body::Body::empty())
         .unwrap();
