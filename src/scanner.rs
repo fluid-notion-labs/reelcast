@@ -127,7 +127,10 @@ fn title_from_path(path: &Path) -> String {
 }
 
 /// Extract a normalized series key from the filename.
-/// Uses raw string literals to ensure regex word boundaries work correctly.
+///
+/// Returns Some(key) only if the file appears to be part of a series
+/// (i.e. contains a SxxExx episode marker). Movies and standalone files
+/// return None and land in the ungrouped bucket.
 fn extract_series_key(path: &Path) -> Option<String> {
     let stem = path.file_stem()?.to_str()?;
 
@@ -138,7 +141,14 @@ fn extract_series_key(path: &Path) -> Option<String> {
     let s = regex_lite::Regex::new(r"(?i)^www\.\S+\s+").ok()?
         .replace(&s, "").to_string();
 
-    // Strip from SxxExx onward — truncates episode title + quality tags in one shot
+    // Only assign a series key if there's a SxxExx marker — movies get None
+    let has_episode = regex_lite::Regex::new(r"(?i)\bS\d{1,2}E\d{1,2}\b").ok()?
+        .is_match(&s);
+    if !has_episode {
+        return None;
+    }
+
+    // Strip from SxxExx onward — truncates episode title + quality tags
     let s = regex_lite::Regex::new(r"(?i)\bS\d{1,2}E\d{1,2}\b.*$").ok()?
         .replace(&s, "").to_string();
 
@@ -150,9 +160,9 @@ fn extract_series_key(path: &Path) -> Option<String> {
     let s = regex_lite::Regex::new(r"\b(?:19|20)\d{2}\b").ok()?
         .replace_all(&s, "").to_string();
 
-    // Strip quality/codec/source/release tags
+    // Strip quality/codec/source/release tags (including "5 1" audio, "dl", "eng" etc)
     let s = regex_lite::Regex::new(
-        r"(?i)\b(?:480p|720p|1080p|2160p|4k|uhd|hdr|sdr|bluray|brrip|bdrip|webrip|web|hdtv|dvdrip|dvd|hdrip|remastered|repack|extended|theatrical|complete|hevc|x264|x265|h264|h265|avc|xvid|divx|aac|ac3|dts|ddp|dd5|10bit|imax|dual|yify|rarbg|eztv|tgx|eztvx|bone|lama|rmteam|neonoir|galaxytv|galaxyrg|dsnp|hq|\d+mb)\b"
+        r"(?i)\b(?:480p|720p|1080p|2160p|4k|uhd|hdr|sdr|bluray|brrip|bdrip|webrip|web|hdtv|dvdrip|dvd|hdrip|remastered|repack|extended|theatrical|complete|hevc|x264|x265|h264|h265|avc|xvid|divx|aac|ac3|dts|ddp|dd5|10bit|imax|dual|dl|eng|ita|esub|5\s1|7\s1|yify|rarbg|eztv|tgx|eztvx|bone|lama|rmteam|neonoir|galaxytv|galaxyrg|dsnp|hq|nezu|msd|megusta|rarbg|\d+mb)\b"
     ).ok()?.replace_all(&s, "").to_string();
 
     // Strip brackets/parens (release groups, year tags)
