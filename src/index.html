@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Reelcast</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: system-ui, sans-serif; background: #0f0f0f; color: #e0e0e0; min-height: 100vh; padding: 2rem; }
@@ -146,10 +147,10 @@
   function openPlayer(url, title) {
     initPlyr();
     document.getElementById('player-title').textContent = title;
-    document.getElementById('player').src = url;
     plyr.source = { type: 'video', sources: [{ src: url }] };
     document.getElementById('player-modal').classList.add('open');
     document.body.style.overflow = 'hidden';
+    plyr.play();
   }
   function closePlayer() {
     plyr && plyr.pause();
@@ -192,7 +193,7 @@
         <div class="time">${fmtAgo(r.played_at)}</div>
         <div class="actions">
           <a class="btn-play btn-sm" href="${r.play_url}" download>▶ VLC</a>
-          ${FEATURE_PLAYER ? `<button class="btn-copy btn-sm" style="display:inline-block;background:#1d4ed8;color:#fff" onclick="openPlayer('${r.file_url}','${r.title.replace(/'/g,"\'")}')">▶ Browser</button>` : ''}
+          ${FEATURE_PLAYER ? `<button class="btn-copy btn-sm" style="display:inline-block;background:#1d4ed8;color:#fff" onclick="openPlayer('${r.file_url_https}','${r.title.replace(/'/g,"\'")}')">▶ Browser</button>` : ''}
           <button class="btn-copy btn-sm" onclick="copyUrl(this, '${r.file_url}')">⎘</button>
         </div>
         <div class="url-row" style="margin-top:0.4rem">
@@ -211,7 +212,7 @@
         <div class="meta">${meta}</div>
         <div class="actions">
           <a class="btn-play" href="${m.play_url}" download>▶ Open in VLC</a>
-          ${FEATURE_PLAYER ? `<button class="btn-copy FEATURE-player" style="display:inline-block" onclick="openPlayer('${m.file_url}','${m.title.replace(/'/g,"\'")}')">▶ Browser</button>` : ''}
+          ${FEATURE_PLAYER ? `<button class="btn-copy FEATURE-player" style="display:inline-block" onclick="openPlayer('${m.file_url_https}','${m.title.replace(/'/g,"\'")}')">▶ Browser</button>` : ''}
           <button class="btn-copy" onclick="copyUrl(this, '${m.file_url}')">⎘</button>
         </div>
         <div class="url-row">

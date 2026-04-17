@@ -106,7 +106,8 @@ struct MediaItem {
     size_bytes: i64,
     container: Option<String>,
     resolution: Option<String>,
-    file_url: String,
+    file_url: String,      // http — for VLC
+    file_url_https: String, // https — for browser player
     play_url: String,
     playlist_url: String,
 }
@@ -122,6 +123,11 @@ impl MediaItem {
                 let ext = std::path::Path::new(&m.path)
                     .extension().and_then(|e| e.to_str()).unwrap_or("mkv");
                 format!("{}/file/{}/{}.{}", file_base, m.id, urlenc(&m.title), ext)
+            },
+            file_url_https: {
+                let ext = std::path::Path::new(&m.path)
+                    .extension().and_then(|e| e.to_str()).unwrap_or("mkv");
+                format!("{}/file/{}/{}.{}", base_url, m.id, urlenc(&m.title), ext)
             },
             play_url: format!("{}/play/{}", base_url, m.id),
             playlist_url: format!("{}/playlist/{}", base_url, m.id),
@@ -142,6 +148,7 @@ struct RecentItem {
     title: String,
     played_at: i64,
     file_url: String,
+    file_url_https: String,
     play_url: String,
 }
 
@@ -179,6 +186,7 @@ async fn recent_played(State(state): State<AppState>) -> Result<impl IntoRespons
     let file_base = file_base_url(&state.config);
     let items: Vec<_> = rows.into_iter().map(|r| RecentItem {
         file_url: format!("{}/file/{}/{}", file_base, r.media_id, urlenc(&r.title)),
+        file_url_https: format!("{}/file/{}/{}", base_url, r.media_id, urlenc(&r.title)),
         play_url: format!("{}/play/{}", base_url, r.media_id),
         media_id: r.media_id,
         title: r.title,
