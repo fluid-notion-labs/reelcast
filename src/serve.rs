@@ -14,6 +14,7 @@ use tower::ServiceExt;
 use tower_http::{cors::CorsLayer, services::ServeFile, trace::TraceLayer};
 
 use crate::{
+    cache::MediaCache,
     config::Config,
     db::{self, MediaFile},
     error::{ReelcastError, Result},
@@ -23,6 +24,7 @@ use crate::{
 #[derive(Clone)]
 pub struct AppState {
     pub pool: SqlitePool,
+    pub media_cache: MediaCache,
     pub config: Arc<Config>,
 }
 
@@ -51,6 +53,23 @@ async fn index() -> impl IntoResponse {
     axum::response::Html(include_str!("index.html"))
 }
 
+async fn setup_page() -> impl IntoResponse {
+    axum::response::Html(include_str!("setup.html"))
+}
+
+async fn serve_cert(State(state): State<AppState>) -> Result<Response> {
+    let cert_path = state.config.cert.as_ref()
+        .ok_or_else(|| ReelcastError::Scanner("No cert configured".into()))?;
+    let bytes = tokio::fs::read(cert_path).await?;
+    Ok((
+        [
+            (axum::http::header::CONTENT_TYPE, "application/x-pem-file"),
+            (axum::http::header::CONTENT_DISPOSITION, "attachment; filename=\"reelcast.pem\""),
+        ],
+        bytes,
+    ).into_response())
+}
+
 #[derive(Deserialize)]
 struct SearchQuery {
     q: Option<String>,
@@ -71,7 +90,7 @@ struct MediaItem {
 }
 
 impl MediaItem {
-    fn from_media(m: MediaFile, base_url: &str) -> Self {
+    fn from_media(m: &MediaFile, base_url: &str) -> Self {
         let resolution = match (m.width, m.height) {
             (Some(w), Some(h)) => Some(format!("{}x{}", w, h)),
             _ => None,
@@ -80,12 +99,12 @@ impl MediaItem {
             file_url: format!("{}/file/{}", base_url, m.id),
             play_url: format!("{}/play/{}", base_url, m.id),
             playlist_url: format!("{}/playlist/{}", base_url, m.id),
-            id: m.id,
-            title: m.title,
+            id: m.id.clone(),
+            title: m.title.clone(),
             year: m.year,
             duration_secs: m.duration_secs,
             size_bytes: m.size_bytes,
-            container: m.container,
+            container: m.container.clone(),
             resolution,
         }
     }
@@ -102,8 +121,8 @@ struct RecentItem {
 
 async fn list_media(State(state): State<AppState>) -> Result<impl IntoResponse> {
     let base_url = base_url(&state.config);
-    let items: Vec<_> = db::get_all(&state.pool).await?
-        .into_iter().map(|m| MediaItem::from_media(m, &base_url)).collect();
+    let files = state.media_cache.get().await;
+    let items: Vec<_> = files.iter().map(|m| MediaItem::from_media(m, &base_url)).collect();
     Ok(Json(items))
 }
 
@@ -112,11 +131,17 @@ async fn search(
     Query(params): Query<SearchQuery>,
 ) -> Result<impl IntoResponse> {
     let base_url = base_url(&state.config);
-    let media = match params.q.as_deref().filter(|q| !q.is_empty()) {
-        Some(q) => db::search_by_title(&state.pool, q).await?,
-        None    => db::get_all(&state.pool).await?,
+    let files = state.media_cache.get().await;
+    let items: Vec<_> = match params.q.as_deref().filter(|q| !q.is_empty()) {
+        Some(q) => {
+            let q_lower = q.to_lowercase();
+            files.iter()
+                .filter(|m| m.title.to_lowercase().contains(&q_lower))
+                .map(|m| MediaItem::from_media(m, &base_url))
+                .collect()
+        }
+        None => files.iter().map(|m| MediaItem::from_media(m, &base_url)).collect(),
     };
-    let items: Vec<_> = media.into_iter().map(|m| MediaItem::from_media(m, &base_url)).collect();
     Ok(Json(items))
 }
 
@@ -137,8 +162,7 @@ async fn play_xspf(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Response> {
-    let m = get_media_or_404(&state.pool, &id).await?;
-    // Record play
+    let m = get_media_or_404(&state, &id).await?;
     let _ = db::record_play(&state.pool, &m.id, &m.title).await;
     let base_url = base_url(&state.config);
     let disposition = format!("attachment; filename=\"{}.xspf\"", m.title);
@@ -156,7 +180,7 @@ async fn play_m3u(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Response> {
-    let m = get_media_or_404(&state.pool, &id).await?;
+    let m = get_media_or_404(&state, &id).await?;
     let _ = db::record_play(&state.pool, &m.id, &m.title).await;
     let base_url = base_url(&state.config);
     let disposition = format!("attachment; filename=\"{}.m3u\"", m.title);
@@ -175,7 +199,7 @@ async fn serve_file(
     Path(id): Path<String>,
     headers: HeaderMap,
 ) -> Result<Response> {
-    let m = get_media_or_404(&state.pool, &id).await?;
+    let m = get_media_or_404(&state, &id).await?;
     let path = std::path::PathBuf::from(&m.path);
     if !path.exists() {
         return Err(ReelcastError::MediaNotFound { id });
@@ -191,25 +215,13 @@ async fn serve_file(
         .map_err(|e| ReelcastError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))
 }
 
-async fn setup_page() -> impl IntoResponse {
-    axum::response::Html(include_str!("setup.html"))
-}
-
-async fn serve_cert(State(state): State<AppState>) -> Result<Response> {
-    let cert_path = state.config.cert.as_ref()
-        .ok_or_else(|| ReelcastError::Scanner("No cert configured".into()))?;
-    let bytes = tokio::fs::read(cert_path).await?;
-    Ok((
-        [
-            (axum::http::header::CONTENT_TYPE, "application/x-pem-file"),
-            (axum::http::header::CONTENT_DISPOSITION, "attachment; filename=\"reelcast.pem\""),
-        ],
-        bytes,
-    ).into_response())
-}
-
-async fn get_media_or_404(pool: &SqlitePool, id: &str) -> Result<MediaFile> {
-    db::get_by_id(pool, id)
+/// Look up from cache first, fall back to DB for freshness
+async fn get_media_or_404(state: &AppState, id: &str) -> Result<MediaFile> {
+    let files = state.media_cache.get().await;
+    if let Some(m) = files.iter().find(|m| m.id == id) {
+        return Ok(m.clone());
+    }
+    db::get_by_id(&state.pool, id)
         .await?
         .ok_or_else(|| ReelcastError::MediaNotFound { id: id.to_string() })
 }

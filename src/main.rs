@@ -1,7 +1,8 @@
+mod cache;
 mod config;
-mod net;
 mod db;
 mod error;
+mod net;
 mod scanner;
 mod serve;
 mod vlc;
@@ -11,6 +12,7 @@ use std::sync::Arc;
 use clap::Parser;
 use tracing::info;
 
+use cache::MediaCache;
 use config::Config;
 use serve::AppState;
 
@@ -27,13 +29,41 @@ async fn main() -> anyhow::Result<()> {
 
     let pool = db::open(&config.db).await?;
 
-    if config.scan_on_start {
-        let count = scanner::scan_library(&pool, &config.library).await?;
-        info!("Indexed {} media files", count);
+    // Populate cache immediately from DB — server is ready to serve before any scan
+    let media_cache = MediaCache::new();
+    let existing = db::get_all(&pool).await?;
+    let preloaded = existing.len();
+    media_cache.set(existing).await;
+    info!("Loaded {} files from DB (serving immediately)", preloaded);
+
+    // Background scan — updates DB + cache without blocking startup
+    {
+        let pool = pool.clone();
+        let cache = media_cache.clone();
+        let library = config.library.clone();
+        tokio::spawn(async move {
+            info!("Background scan started");
+            match scanner::scan_library(&pool, &library).await {
+                Ok(count) => {
+                    match db::get_all(&pool).await {
+                        Ok(files) => {
+                            cache.set(files).await;
+                            info!("Background scan complete — {} files indexed", count);
+                        }
+                        Err(e) => tracing::error!("Cache refresh failed: {}", e),
+                    }
+                }
+                Err(e) => tracing::error!("Background scan failed: {}", e),
+            }
+        });
     }
 
     let addr: std::net::SocketAddr = format!("{}:{}", config.host, config.port).parse()?;
-    let state = AppState { pool, config: Arc::new(config.clone()) };
+    let state = AppState {
+        pool,
+        media_cache,
+        config: Arc::new(config.clone()),
+    };
     let app = serve::router(state);
 
     print_urls(&config, addr);
@@ -49,14 +79,10 @@ async fn main() -> anyhow::Result<()> {
 
 fn print_urls(config: &Config, _addr: std::net::SocketAddr) {
     let scheme = config.scheme();
-
-    // Always show localhost
     info!("  → {}://localhost:{}", scheme, config.port);
-
     if let Some(ip) = net::local_ip() {
         info!("  → {}://{}:{}", scheme, ip, config.port);
     }
-
     if !config.tls_enabled() {
         info!("  (run scripts/gencert to enable HTTPS)");
     }
@@ -108,10 +134,7 @@ mod tls {
                 let io = hyper_util::rt::TokioIo::new(tls);
                 let svc = hyper::service::service_fn(move |req| {
                     let mut app = app.clone();
-                    async move {
-                        use tower::Service;
-                        app.call(req).await
-                    }
+                    async move { tower::Service::call(&mut app, req).await }
                 });
                 let _ = hyper_util::server::conn::auto::Builder::new(
                     hyper_util::rt::TokioExecutor::new()
