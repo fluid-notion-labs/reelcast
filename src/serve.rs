@@ -3,15 +3,15 @@ use std::sync::Arc;
 use axum::{
     Router,
     extract::{Path, Query, State},
-    http::{HeaderMap, StatusCode},
+    http::HeaderMap,
     response::{IntoResponse, Response},
     routing::get,
     Json,
 };
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
-use tower_http::{cors::CorsLayer, trace::TraceLayer};
-use tracing::info;
+use tower::ServiceExt;
+use tower_http::{cors::CorsLayer, services::ServeFile, trace::TraceLayer};
 
 use crate::{
     config::Config,
@@ -40,14 +40,11 @@ pub fn router(state: AppState) -> Router {
         .with_state(state)
 }
 
-// ── Handlers ──────────────────────────────────────────────────────────────────
-
 async fn health() -> impl IntoResponse {
     Json(serde_json::json!({ "status": "ok", "version": env!("CARGO_PKG_VERSION") }))
 }
 
 async fn index() -> impl IntoResponse {
-    // Minimal HTML search UI — no JS framework, just a form
     axum::response::Html(include_str!("index.html"))
 }
 
@@ -115,7 +112,6 @@ async fn search(
     Ok(Json(items))
 }
 
-/// Returns an XSPF playlist — VLC opens this directly
 async fn play_xspf(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -130,7 +126,6 @@ async fn play_xspf(
         .into_response())
 }
 
-/// Returns an M3U playlist
 async fn play_m3u(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -151,7 +146,8 @@ async fn play_m3u(
         .into_response())
 }
 
-/// Zero-copy file serving with Range support via tower-http ServeFile
+/// Zero-copy file serving — tower-http ServeFile handles Range, ETag,
+/// Content-Type, and calls sendfile(2) on Linux.
 async fn serve_file(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -164,30 +160,18 @@ async fn serve_file(
         return Err(ReelcastError::MediaNotFound { id });
     }
 
-    // tower-http ServeFile handles Range, ETag, Content-Type, sendfile
-    let req = axum::http::Request::builder()
+    // Build a minimal request carrying the original headers (Range, etc.)
+    let mut req = axum::http::Request::builder()
         .body(axum::body::Body::empty())
         .unwrap();
-
-    let mut serve = tower_http::services::ServeFile::new(&path);
-
-    // Re-attach range headers so tower-http handles partial content
-    use tower::ServiceExt;
-    let mut req = req;
     *req.headers_mut() = headers;
 
-    let resp = serve
-        .ready()
+    ServeFile::new(&path)
+        .oneshot(req)
         .await
-        .map_err(|e| ReelcastError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?
-        .call(req)
-        .await
-        .map_err(|e| ReelcastError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
-
-    Ok(resp.map(axum::body::Body::new))
+        .map(|r| r.map(axum::body::Body::new).into_response())
+        .map_err(|e| ReelcastError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))
 }
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
 
 async fn get_media_or_404(pool: &SqlitePool, id: &str) -> Result<MediaFile> {
     db::get_by_id(pool, id)

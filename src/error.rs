@@ -8,12 +8,6 @@ pub enum ReelcastError {
     #[error("Database migration error: {0}")]
     Migration(#[from] sqlx::migrate::MigrateError),
 
-    #[error("Search index error: {0}")]
-    Search(#[from] tantivy::TantivyError),
-
-    #[error("Search query parse error: {0}")]
-    SearchQuery(#[from] tantivy::query::QueryParserError),
-
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
@@ -27,7 +21,6 @@ pub enum ReelcastError {
     Scanner(String),
 }
 
-/// Axum-compatible error response
 impl axum::response::IntoResponse for ReelcastError {
     fn into_response(self) -> axum::response::Response {
         use axum::http::StatusCode;
@@ -35,9 +28,6 @@ impl axum::response::IntoResponse for ReelcastError {
 
         let (status, message) = match &self {
             ReelcastError::MediaNotFound { .. } => (StatusCode::NOT_FOUND, self.to_string()),
-            ReelcastError::Db(_) | ReelcastError::Migration(_) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, self.to_string())
-            }
             _ => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
         };
 
