@@ -45,23 +45,7 @@ pub fn router(state: AppState) -> Router {
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 
-    #[cfg(feature = "svelte")]
-    let router = svelte_ui::attach(router);
-
-    router
-}
-
-#[cfg(feature = "svelte")]
-mod svelte_ui {
-    use axum::Router;
-    use tower_http::services::ServeDir;
-    use super::AppState;
-
-    pub fn attach(router: Router<AppState>) -> Router<AppState> {
-        router.fallback_service(
-            ServeDir::new("ui/svelte/dist").append_index_html_on_directories(true)
-        )
-    }
+        router
 }
 
 /// Minimal HTTP router for VLC — file serving and playlists only, no TLS required
@@ -80,7 +64,10 @@ async fn health() -> impl IntoResponse {
 }
 
 async fn index() -> impl IntoResponse {
-    let html = include_str!("../ui/vanilla/index.html")
+    let bytes = crate::ui::get("index.html")
+        .map(|f| f.data)
+        .unwrap_or_default();
+    let html = String::from_utf8_lossy(&bytes)
         .replace(
             "const FEATURE_PLAYER = false;",
             if cfg!(feature = "media-player") { "const FEATURE_PLAYER = true;" }
@@ -95,7 +82,10 @@ async fn index() -> impl IntoResponse {
 }
 
 async fn setup_page() -> impl IntoResponse {
-    axum::response::Html(include_str!("../ui/vanilla/setup.html"))
+    let bytes = crate::ui::get("setup.html")
+        .map(|f| f.data)
+        .unwrap_or_default();
+    axum::response::Html(String::from_utf8_lossy(&bytes).into_owned())
 }
 
 async fn serve_cert(State(state): State<AppState>) -> Result<Response> {
