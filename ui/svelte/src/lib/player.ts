@@ -25,9 +25,37 @@ export function getCurrentItem(): MediaItem | null { return queue[queueIdx] ?? n
 export function getNextItem(): MediaItem | null { return hasNext() ? queue[queueIdx + 1] : null; }
 export function getPrevItem(): MediaItem | null { return hasPrev() ? queue[queueIdx - 1] : null; }
 
+function dirTokens(dirs: string[]): Set<string> {
+  const tokens = new Set<string>();
+  const skip = new Set(['the','and','of','in','to','a','an','for','with','from']);
+  for (const d of dirs) {
+    const parts = d.replace(/\/+$/, '').split('/').slice(-2);
+    for (const part of parts) {
+      const norm = part.replace(/[._-]/g, ' ').toLowerCase()
+        .replace(/(s\d{1,2}|complete|720p|1080p|480p|webrip|dsnp|galaxytv|tgx|season\s*\d+)/g, '');
+      for (const tok of norm.split(/\s+/))
+        if (tok.length > 3 && !skip.has(tok)) tokens.add(tok);
+    }
+  }
+  return tokens;
+}
+
+function keysRelated(keyA: string, dirA: string, keyB: string, dirB: string): boolean {
+  if (!keyA.includes(keyB) && !keyB.includes(keyA)) return false;
+  const ancA = dirA.split('/').slice(0,-1).join('/');
+  const ancB = dirB.split('/').slice(0,-1).join('/');
+  if (ancA === ancB) return true;
+  const tokA = dirTokens([dirA]), tokB = dirTokens([dirB]);
+  for (const t of tokA) if (tokB.has(t)) return true;
+  return false;
+}
+
 export function buildQueue(item: MediaItem, items: MediaItem[]) {
   const grouped = item.series_key
-    ? items.filter(m => m.series_key === item.series_key)
+    ? items.filter(m => m.series_key != null && (
+        m.series_key === item.series_key ||
+        keysRelated(item.series_key!, item.dir, m.series_key, m.dir)
+      ))
     : items.filter(m => m.dir === item.dir);
 
   queue = [...grouped].sort((a, b) => {

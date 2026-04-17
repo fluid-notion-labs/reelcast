@@ -26,6 +26,64 @@
     return m ? `${m[1].padStart(2,'0')}${m[2].padStart(2,'0')}` : null;
   }
 
+  // Extract meaningful tokens from a dir path (last 2 components, normalized)
+  function dirTokens(dirs: string[]): Set<string> {
+    const tokens = new Set<string>();
+    const skipWords = new Set(['the','and','of','in','to','a','an','for','with','from']);
+    for (const d of dirs) {
+      const parts = d.replace(/\/+$/, '').split('/').slice(-2);
+      for (const part of parts) {
+        const normalized = part.replace(/[.\-_]/g, ' ').toLowerCase()
+          .replace(/(s\d{1,2}|complete|720p|1080p|480p|webrip|dsnp|galaxytv|tgx|season\s*\d+|2160p|hevc|x264|x265)/g, '');
+        for (const tok of normalized.split(/\s+/)) {
+          if (tok.length > 3 && !skipWords.has(tok)) tokens.add(tok);
+        }
+      }
+    }
+    return tokens;
+  }
+
+  function shouldMerge(keyA: string, dirsA: string[], keyB: string, dirsB: string[]): boolean {
+    // One key must be a substring of the other
+    if (!keyA.includes(keyB) && !keyB.includes(keyA)) return false;
+    // Dirs must share a common ancestor
+    const ancestorsA = new Set(dirsA.map(d => d.split('/').slice(0,-1).join('/')));
+    const ancestorsB = new Set(dirsB.map(d => d.split('/').slice(0,-1).join('/')));
+    for (const a of ancestorsA) if (ancestorsB.has(a)) return true;
+    // Or dir tokens overlap
+    const tokA = dirTokens(dirsA);
+    const tokB = dirTokens(dirsB);
+    for (const t of tokA) if (tokB.has(t)) return true;
+    return false;
+  }
+
+  function mergeGroups(groups: SeriesGroup[]): SeriesGroup[] {
+    // Union-find style merge
+    const merged = [...groups];
+    let changed = true;
+    while (changed) {
+      changed = false;
+      outer: for (let i = 0; i < merged.length; i++) {
+        for (let j = i + 1; j < merged.length; j++) {
+          if (shouldMerge(merged[i].key, merged[i].dirs, merged[j].key, merged[j].dirs)) {
+            // Merge j into i — use the shorter key as canonical
+            const canonical = merged[i].key.length <= merged[j].key.length
+              ? merged[i].key : merged[j].key;
+            merged[i] = {
+              key: canonical,
+              items: [...merged[i].items, ...merged[j].items],
+              dirs: [...new Set([...merged[i].dirs, ...merged[j].dirs])],
+            };
+            merged.splice(j, 1);
+            changed = true;
+            break outer;
+          }
+        }
+      }
+    }
+    return merged;
+  }
+
   function buildStructure(items: MediaItem[]) {
     const groups = new Map<string, MediaItem[]>();
     const lone: MediaItem[] = [];
@@ -43,6 +101,16 @@
         key,
         dirs: [...new Set(groupItems.map(i => i.dir))].sort(),
         items: [...groupItems].sort((a, b) => {
+          const ea = epKey(a.filename), eb = epKey(b.filename);
+          if (ea && eb) return ea.localeCompare(eb, undefined, { numeric: true });
+          return a.filename.localeCompare(b.filename, undefined, { numeric: true });
+        }),
+      }))
+      .sort((a, b) => a.key.localeCompare(b.key));
+    seriesGroups = mergeGroups(seriesGroups)
+      .map(g => ({
+        ...g,
+        items: [...g.items].sort((a, b) => {
           const ea = epKey(a.filename), eb = epKey(b.filename);
           if (ea && eb) return ea.localeCompare(eb, undefined, { numeric: true });
           return a.filename.localeCompare(b.filename, undefined, { numeric: true });
