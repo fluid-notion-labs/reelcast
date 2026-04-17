@@ -1,12 +1,11 @@
 use std::sync::Arc;
 
 use axum::{
-    Router,
     extract::{Path, Query, State},
-    http::{HeaderMap, header},
+    http::{header, HeaderMap},
     response::{IntoResponse, Response},
     routing::get,
-    Json,
+    Json, Router,
 };
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
@@ -66,7 +65,7 @@ struct MediaItem {
     file_url: String,
     /// XSPF playlist URL
     play_url: String,
-    /// M3U playlist URL  
+    /// M3U playlist URL
     playlist_url: String,
 }
 
@@ -94,7 +93,10 @@ impl MediaItem {
 async fn list_media(State(state): State<AppState>) -> Result<impl IntoResponse> {
     let base_url = base_url(&state.config);
     let media = db::get_all(&state.pool).await?;
-    let items: Vec<_> = media.into_iter().map(|m| MediaItem::from_media(m, &base_url)).collect();
+    let items: Vec<_> = media
+        .into_iter()
+        .map(|m| MediaItem::from_media(m, &base_url))
+        .collect();
     Ok(Json(items))
 }
 
@@ -107,40 +109,36 @@ async fn search(
         Some(q) => db::search_by_title(&state.pool, q).await?,
         None => db::get_all(&state.pool).await?,
     };
-    let items: Vec<_> = media.into_iter().map(|m| MediaItem::from_media(m, &base_url)).collect();
+    let items: Vec<_> = media
+        .into_iter()
+        .map(|m| MediaItem::from_media(m, &base_url))
+        .collect();
     Ok(Json(items))
 }
 
 /// XSPF playlist — open URL directly in VLC (File → Open Network Stream)
-async fn play_xspf(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Result<Response> {
+async fn play_xspf(State(state): State<AppState>, Path(id): Path<String>) -> Result<Response> {
     let m = get_media_or_404(&state.pool, &id).await?;
+    let title = m.title.clone();
     let base_url = base_url(&state.config);
     let playlist = vlc::xspf(&[m], &base_url);
-    let disposition = format!("attachment; filename=\"{}.xspf\"", m.title);
+    let disposition = format!("attachment; filename=\"{}.xspf\"", title);
     Ok((
         [
             (header::CONTENT_TYPE, "application/xspf+xml"),
             (header::CONTENT_DISPOSITION, disposition.as_str()),
         ],
         playlist,
-    ).into_response())
+    )
+        .into_response())
 }
 
 /// M3U playlist
-async fn play_m3u(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Result<Response> {
+async fn play_m3u(State(state): State<AppState>, Path(id): Path<String>) -> Result<Response> {
     let m = get_media_or_404(&state.pool, &id).await?;
     let base_url = base_url(&state.config);
     let playlist = vlc::m3u_single(&m, &base_url);
-    Ok((
-        [(header::CONTENT_TYPE, "audio/x-mpegurl")],
-        playlist,
-    ).into_response())
+    Ok(([(header::CONTENT_TYPE, "audio/x-mpegurl")], playlist).into_response())
 }
 
 /// Zero-copy file serving — tower-http ServeFile handles Range, ETag,
@@ -166,7 +164,12 @@ async fn serve_file(
         .oneshot(req)
         .await
         .map(|r| r.map(axum::body::Body::new).into_response())
-        .map_err(|e| ReelcastError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))
+        .map_err(|e| {
+            ReelcastError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))
+        })
 }
 
 async fn get_media_or_404(pool: &SqlitePool, id: &str) -> Result<MediaFile> {
