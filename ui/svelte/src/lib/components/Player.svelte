@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { MediaItem } from '$lib/types';
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import {
     openPlayer, playNext, playPrev,
     cancelNext, pausePlayer, attachKeyboard,
@@ -23,7 +23,9 @@
   let canPrev = $state(false);
   let canNext = $state(false);
 
-  function refreshNav() {
+  async function refreshNav() {
+    // tick() lets Svelte flush any pending state before we read queue state
+    await tick();
     prevItem = getPrevItem();
     nextItem = getNextItem();
     canPrev = hasPrev();
@@ -37,9 +39,9 @@
     onClose();
   }
 
-  function handleUpNext(next: MediaItem) {
+  async function handleUpNext(next: MediaItem) {
     upNextItem = next;
-    refreshNav();
+    await refreshNav();
   }
 
   function handlePlayNext() {
@@ -52,24 +54,27 @@
     upNextItem = null;
   }
 
-  function handlePrev() {
+  async function handlePrev() {
     upNextItem = null;
     playPrev();
+    await refreshNav();
   }
 
-  function handleNext() {
+  async function handleNext() {
     upNextItem = null;
     playNext();
+    await refreshNav();
   }
 
   $effect(() => {
-    if (item) {
+    if (item && allItems.length > 0) {
       upNextItem = null;
       openPlayer(item, allItems, {
         onUpNext: handleUpNext,
         onQueueChange: refreshNav,
       });
-      refreshNav();
+      // Use tick() so queue is fully built before reading nav state
+      tick().then(() => refreshNav());
     }
   });
 
