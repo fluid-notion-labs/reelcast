@@ -62,6 +62,49 @@
     return fmtSize(items.reduce((acc, i) => acc + i.size_bytes, 0));
   }
 
+  let copied = $state(false);
+
+  function buildJson() {
+    return JSON.stringify({
+      series: seriesGroups.map(g => ({
+        series_key: g.key,
+        episode_count: g.items.length,
+        dirs: g.dirs,
+        episodes: g.items.map(i => ({
+          title: i.title,
+          filename: i.filename,
+          dir: i.dir,
+          duration_secs: i.duration_secs,
+        })),
+      })),
+      movies: ungrouped.map(i => ({
+        title: i.title,
+        filename: i.filename,
+        year: i.year,
+        duration_secs: i.duration_secs,
+      })),
+      summary: {
+        series_count: seriesGroups.length,
+        movie_count: ungrouped.length,
+        total_files: allItems.length,
+      }
+    }, null, 2);
+  }
+
+  async function copyJson() {
+    const json = buildJson();
+    try {
+      await navigator.clipboard.writeText(json);
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = json; ta.style.cssText = 'position:fixed;opacity:0';
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      document.execCommand('copy'); document.body.removeChild(ta);
+    }
+    copied = true;
+    setTimeout(() => copied = false, 2000);
+  }
+
   onMount(async () => {
     const res = await fetch('/media');
     allItems = await res.json();
@@ -77,7 +120,12 @@
     <a href="/" class="back">← Back</a>
     <h1>Library Structure</h1>
     {#if !loading}
-      <p class="summary">{seriesGroups.length} series · {ungrouped.length} movies · {allItems.length} total</p>
+      <div class="summary-row">
+        <p class="summary">{seriesGroups.length} series · {ungrouped.length} movies · {allItems.length} total</p>
+        <button class="copy-btn" class:copied={copied} onclick={copyJson}>
+          {copied ? '✓ Copied' : '⎘ Copy as JSON'}
+        </button>
+      </div>
     {/if}
   </header>
 
@@ -167,7 +215,11 @@
   .back { color: #f97316; text-decoration: none; font-size: 0.88rem; }
   .back:hover { text-decoration: underline; }
   h1 { font-size: 1.4rem; font-weight: 600; color: #fff; margin: 0.4rem 0 0.2rem; }
+  .summary-row { display: flex; align-items: center; gap: 1rem; margin-top: 0.2rem; }
   .summary, .muted { color: #555; font-size: 0.85rem; }
+  .copy-btn { padding: 0.3rem 0.8rem; border-radius: 6px; border: 1px solid #2a2a2a; background: #1a1a1a; color: #aaa; font-size: 0.8rem; cursor: pointer; }
+  .copy-btn:hover { border-color: #f97316; color: #f97316; }
+  .copy-btn.copied { background: #14532d; border-color: #14532d; color: #86efac; }
   .section-title { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: #555; margin: 1.5rem 0 0.5rem; }
 
   .group { border: 1px solid #1e1e1e; border-radius: 8px; margin-bottom: 0.4rem; overflow: hidden; }
