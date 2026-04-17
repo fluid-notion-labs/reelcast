@@ -46,7 +46,6 @@ pub fn router(state: AppState) -> Router {
         .route("/qr", get(serve_qr))
         .route("/debug/ui", get(debug_ui))
         .route("/control", get(control_page))
-        .route("/qr", get(serve_qr))
         .route("/sessions", get(list_sessions))
         .route("/events/:session", get(sse_events))
         .route("/command/:session", post(send_command))
@@ -90,26 +89,7 @@ async fn index() -> impl IntoResponse {
     axum::response::Html(html)
 }
 
-async fn serve_qr(State(state): State<AppState>) -> impl IntoResponse {
-    use qrcode::QrCode;
-    use qrcode::render::svg;
-
-    let url = base_url(&state.config);
-    let code = QrCode::new(url.as_bytes()).unwrap();
-    let svg_str = code.render::<svg::Color>()
-        .min_dimensions(200, 200)
-        .dark_color(svg::Color("#f97316"))
-        .light_color(svg::Color("#0f0f0f"))
-        .build();
-
-    (
-        [(axum::http::header::CONTENT_TYPE, "image/svg+xml")],
-        svg_str,
-    )
-}
-
 async fn debug_ui() -> impl IntoResponse {
-    use crate::ui::Assets;
     let files: Vec<String> = crate::ui::Assets::iter().map(|f| f.to_string()).collect();
     let feature = if cfg!(feature = "svelte") { "svelte" } else { "vanilla" };
     Json(serde_json::json!({

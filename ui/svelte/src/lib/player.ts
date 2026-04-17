@@ -53,6 +53,7 @@ function handleRemoteCommand(cmd: { cmd: string; value?: number }) {
     case 'seek':   plyr.currentTime = Math.max(0, plyr.currentTime + (cmd.value ?? 0)); break;
     case 'next':   playNext(); break;
     case 'prev':   playPrev(); break;
+    case 'fullscreen': plyr.fullscreen.toggle(); break;
   }
 }
 

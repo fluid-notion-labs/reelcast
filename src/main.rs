@@ -118,22 +118,6 @@ fn print_urls(config: &Config) {
     let ip = crate::net::local_ip().map(|ip| ip.to_string()).unwrap_or_else(|| config.host.clone());
     let control_url = format!("{}://{}:{}/control", config.scheme(), ip, config.port);
     info!("  Remote control: {}", control_url);
-    // Print compact QR to terminal
-    let qr_str = print_qr_terminal(&control_url);
-    for line in qr_str.lines() {
-        info!("{}", line);
-    }
-}
-
-fn print_qr_terminal(url: &str) -> String {
-    use qrcode::{QrCode, EcLevel};
-    use qrcode::render::unicode;
-    QrCode::with_error_correction_level(url, EcLevel::M)
-        .or_else(|_| QrCode::new(url))
-        .map(|code| code.render::<unicode::Dense1x2>()
-            .quiet_zone(true)
-            .build())
-        .unwrap_or_default()
 }
 
 fn _old_print_urls(config: &Config) {
@@ -162,7 +146,7 @@ mod tls {
     use crate::config::Config;
 
     pub async fn serve_svc(
-        app: axum::routing::IntoMakeServiceWithConnectInfo<axum::Router, std::net::SocketAddr>,
+        app: axum::extract::connect_info::IntoMakeServiceWithConnectInfo<axum::Router, std::net::SocketAddr>,
         addr: SocketAddr,
         config: Config,
     ) -> anyhow::Result<()> {
@@ -197,7 +181,7 @@ mod tls {
             tokio::spawn(async move {
                 let Ok(tls) = acceptor.accept(tcp).await else { return };
                 use tower::Service;
-                let router = make_svc.call(peer).await.unwrap();
+                let router = make_svc.call(_peer).await.unwrap();
                 let io = hyper_util::rt::TokioIo::new(tls);
                 let svc = hyper::service::service_fn(move |req| {
                     let mut r = router.clone();
