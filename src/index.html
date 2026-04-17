@@ -43,10 +43,13 @@
   .meta { font-size: 0.78rem; color: #666; margin-bottom: 0.8rem; }
   .actions { display: flex; gap: 0.5rem; }
   .btn-play { flex: 1; padding: 0.4rem 0.6rem; text-align: center; border-radius: 5px; background: #f97316; color: #fff; text-decoration: none; font-size: 0.82rem; white-space: nowrap; }
-  .btn-copy { flex: 1; padding: 0.4rem 0.6rem; text-align: center; border-radius: 5px; background: #222; color: #aaa; border: none; font-size: 0.82rem; cursor: pointer; white-space: nowrap; }
+  .btn-copy { padding: 0.4rem 0.6rem; text-align: center; border-radius: 5px; background: #222; color: #aaa; border: none; font-size: 0.82rem; cursor: pointer; white-space: nowrap; }
   .btn-play:hover { background: #ea6a0a; }
   .btn-copy:hover { background: #2a2a2a; color: #fff; }
   .btn-copy.copied { background: #14532d; color: #86efac; }
+  .url-row { display: flex; align-items: center; gap: 0.4rem; margin-top: 0.5rem; background: #111; border: 1px solid #2a2a2a; border-radius: 5px; padding: 0.3rem 0.5rem; }
+  .url-link { flex: 1; font-size: 0.72rem; color: #888; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: monospace; }
+  .url-link:hover { color: #f97316; }
   .btn-sm { padding: 0.3rem 0.5rem; font-size: 0.75rem; }
 </style>
 </head>
@@ -141,7 +144,11 @@
         <div class="time">${fmtAgo(r.played_at)}</div>
         <div class="actions">
           <a class="btn-play btn-sm" href="${r.play_url}" download>▶ Play</a>
-          <button class="btn-copy btn-sm" onclick="copyUrl(this, '${r.file_url}')">⎘ URL</button>
+          <button class="btn-copy btn-sm" onclick="copyUrl(this, '${r.file_url}')">⎘</button>
+        </div>
+        <div class="url-row" style="margin-top:0.4rem">
+          <a class="url-link" href="${r.file_url}" target="_blank" title="${r.file_url}">${r.file_url}</a>
+          <button class="btn-copy btn-sm" onclick="copyUrl(this, '${r.file_url}')">⎘</button>
         </div>
       </div>`).join('');
   }
@@ -155,7 +162,11 @@
         <div class="meta">${meta}</div>
         <div class="actions">
           <a class="btn-play" href="${m.play_url}" download>▶ Open in VLC</a>
-          <button class="btn-copy" onclick="copyUrl(this, '${m.file_url}')">⎘ Copy URL</button>
+          <button class="btn-copy" onclick="copyUrl(this, '${m.file_url}')">⎘</button>
+        </div>
+        <div class="url-row">
+          <a class="url-link" href="${m.file_url}" target="_blank" title="${m.file_url}">${m.file_url}</a>
+          <button class="btn-copy" onclick="copyUrl(this, '${m.file_url}')">⎘</button>
         </div>
       </div>`;
   }
