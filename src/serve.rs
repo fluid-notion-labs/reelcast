@@ -179,5 +179,10 @@ async fn get_media_or_404(pool: &SqlitePool, id: &str) -> Result<MediaFile> {
 }
 
 fn base_url(config: &Config) -> String {
-    format!("{}://{}:{}", config.scheme(), config.host, config.port)
+    // Use actual LAN IP so copy-pasted URLs work from other devices.
+    // Falls back to configured host (e.g. localhost) if detection fails.
+    let host = crate::net::local_ip()
+        .map(|ip| ip.to_string())
+        .unwrap_or_else(|| config.host.clone());
+    format!("{}://{}:{}", config.scheme(), host, config.port)
 }
