@@ -94,11 +94,10 @@ async fn main() -> anyhow::Result<()> {
 }
 
 fn log_ui_info() {
-    use crate::ui::Assets;
-    use rust_embed::Embed;
+
 
     let feature = if cfg!(feature = "svelte") { "svelte" } else { "vanilla" };
-    let files: Vec<_> = Assets::iter().collect();
+    let files: Vec<_> = crate::ui::Assets::iter().collect();
     info!("UI: {} ({} embedded files)", feature, files.len());
     for f in &files {
         tracing::debug!("  embedded: {}", f);

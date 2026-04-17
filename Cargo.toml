@@ -56,6 +56,7 @@ percent-encoding = "2"
 regex-lite = "0.1"
 dirs-next = "2"
 rust-embed = { version = "8", features = ["debug-embed"] }
+mime_guess = "2"
 
 [build-dependencies]
 # build.rs uses std only — no extra deps needed

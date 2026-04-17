@@ -118,6 +118,7 @@ pub async fn get_all(pool: &SqlitePool) -> Result<Vec<MediaFile>> {
         .await?)
 }
 
+#[allow(dead_code)]
 pub async fn search_by_title(pool: &SqlitePool, q: &str) -> Result<Vec<MediaFile>> {
     let pattern = format!("%{}%", q);
     Ok(sqlx::query_as::<_, MediaFile>(

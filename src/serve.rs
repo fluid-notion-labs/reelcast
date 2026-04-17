@@ -42,6 +42,7 @@ pub fn router(state: AppState) -> Router {
         .route("/setup", get(setup_page))
         .route("/cert", get(serve_cert))
         .route("/debug/ui", get(debug_ui))
+        .fallback(get(serve_static))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
@@ -82,15 +83,34 @@ async fn index() -> impl IntoResponse {
 
 async fn debug_ui() -> impl IntoResponse {
     use crate::ui::Assets;
-    use rust_embed::Embed;
-
-    let files: Vec<String> = Assets::iter().map(|f| f.to_string()).collect();
+    let files: Vec<String> = crate::ui::Assets::iter().map(|f| f.to_string()).collect();
     let feature = if cfg!(feature = "svelte") { "svelte" } else { "vanilla" };
     Json(serde_json::json!({
         "ui_feature": feature,
         "embedded_files": files,
         "file_count": files.len(),
     }))
+}
+
+/// Serve embedded static assets — handles /_app/... and any other embedded files.
+/// This is the fallback for the Svelte build's JS/CSS chunks.
+async fn serve_static(uri: axum::http::Uri) -> impl IntoResponse {
+    let path = uri.path().trim_start_matches('/');
+    match crate::ui::get(path) {
+        Some(file) => {
+            let mime = mime_guess::from_path(path)
+                .first_or_octet_stream()
+                .to_string();
+            (
+                [(axum::http::header::CONTENT_TYPE, mime)],
+                file.data.to_vec(),
+            ).into_response()
+        }
+        None => {
+            // SPA fallback — serve index.html for unknown paths
+            index().await.into_response()
+        }
+    }
 }
 
 async fn setup_page() -> impl IntoResponse {
