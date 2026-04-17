@@ -5,7 +5,7 @@ edition = "2021"
 description = "Zero-copy local media server with VLC client support"
 
 [features]
-default = []
+default = ["media-player"]
 media-player = []
 
 [[bin]]
