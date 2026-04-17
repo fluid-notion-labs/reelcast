@@ -41,6 +41,7 @@ pub fn router(state: AppState) -> Router {
         .route("/health", get(health))
         .route("/setup", get(setup_page))
         .route("/cert", get(serve_cert))
+        .route("/debug/ui", get(debug_ui))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
@@ -77,6 +78,19 @@ async fn index() -> impl IntoResponse {
             else { "const FEATURE_VLC = false;" },
         );
     axum::response::Html(html)
+}
+
+async fn debug_ui() -> impl IntoResponse {
+    use crate::ui::Assets;
+    use rust_embed::Embed;
+
+    let files: Vec<String> = Assets::iter().map(|f| f.to_string()).collect();
+    let feature = if cfg!(feature = "svelte") { "svelte" } else { "vanilla" };
+    Json(serde_json::json!({
+        "ui_feature": feature,
+        "embedded_files": files,
+        "file_count": files.len(),
+    }))
 }
 
 async fn setup_page() -> impl IntoResponse {
