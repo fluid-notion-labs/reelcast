@@ -12,6 +12,7 @@ export interface MediaItem {
   playlist_url: string;
   dir: string;
   filename: string;
+  series_key: string | null;
 }
 
 export interface RecentItem {

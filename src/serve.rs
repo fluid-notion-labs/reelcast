@@ -153,6 +153,7 @@ struct MediaItem {
     playlist_url: String,
     dir: String,      // parent directory path — for grouping/sorting
     filename: String, // original filename — for natural sort within dir
+    series_key: Option<String>,
 }
 
 impl MediaItem {
@@ -178,6 +179,7 @@ impl MediaItem {
                 .parent().and_then(|p| p.to_str()).unwrap_or("").to_string(),
             filename: std::path::Path::new(&m.path)
                 .file_name().and_then(|f| f.to_str()).unwrap_or("").to_string(),
+            series_key: m.series_key.clone(),
             id: m.id.clone(),
             title: m.title.clone(),
             year: m.year,

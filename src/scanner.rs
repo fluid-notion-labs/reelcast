@@ -86,6 +86,8 @@ async fn probe_and_upsert(pool: &SqlitePool, path: &Path) -> Result<()> {
         .clone()
         .map(|s| s.split(',').next().unwrap_or(&s).to_string());
 
+    let series_key = extract_series_key(path);
+
     let m = MediaFile {
         id: stable_id(path),
         path: path.to_string_lossy().into_owned(),
@@ -98,6 +100,7 @@ async fn probe_and_upsert(pool: &SqlitePool, path: &Path) -> Result<()> {
         audio_codec: audio.and_then(|s| s.codec_name.clone()),
         width: video.and_then(|s| s.width),
         height: video.and_then(|s| s.height),
+        series_key,
     };
 
     db::upsert(pool, &m).await
@@ -121,6 +124,62 @@ fn title_from_path(path: &Path) -> String {
         .replace(['.', '_', '-'], " ")
         .trim()
         .to_string()
+}
+
+/// Extract a normalized series key from the filename.
+///
+/// Strips episode markers, quality tags, release groups, and punctuation to
+/// get a stable lowercase show name for grouping across seasons and directories.
+///
+/// Examples:
+///   "The.Mandalorian.S01E01.720p.DSNP.WEBRip.x264-GalaxyTV" → "the mandalorian"
+///   "The Mandalorian - S03E01 - Chapter 17 - The Apostate"  → "the mandalorian"
+///   "Mr. Inbetween S02E01 Shoulda Tapped"                   → "mr inbetween"
+///   "Star.Wars.Andor.S01E01.720p..."                        → "star wars andor"
+///   "Fight.Club.1999.REMASTERED..."                         → "fight club"  (movie, key = title)
+fn extract_series_key(path: &Path) -> Option<String> {
+    let stem = path.file_stem()?.to_str()?;
+
+    // Normalize separators to spaces
+    let s = stem.replace(['.', '_', '-'], " ");
+
+    // Strip leading junk like "www.UIndex.org   -   "
+    let s = regex_lite::Regex::new(r"(?i)^www\.\S+\s+").ok()?
+        .replace(&s, "").to_string();
+
+    // Strip everything from SxxExx onward (episode info + quality tags)
+    let episode_re = regex_lite::Regex::new(
+        r"(?i)[Ss]\d{1,2}[Ee]\d{1,2}.*$"
+    ).ok()?;
+    let s = episode_re.replace(&s, "").to_string();
+
+    // Also strip standalone season markers like "S01" or "Season 3" or "S01-S03"
+    let season_re = regex_lite::Regex::new(
+        r"(?i)(?:S\d{1,2}(?:\s*[-–]\s*S\d{1,2})?|Season\s+\d+).*$"
+    ).ok()?;
+    let s = season_re.replace(&s, "").to_string();
+
+    // Strip year "(1999)" or ".1999."
+    let year_re = regex_lite::Regex::new(r"(19|20)\d{2}").ok()?;
+    let s = year_re.replace_all(&s, "").to_string();
+
+    // Strip quality/codec/source tags
+    let tags = regex_lite::Regex::new(
+        r"(?i)(480p|720p|1080p|2160p|4k|uhd|hdr|sdr|bluray|blu ray|brrip|bdrip|webrip|web dl|web|hdtv|dvdrip|dvd|hdrip|remastered|repack|extended|theatrical|complete|hevc|x264|x265|h264|h265|avc|xvid|divx|aac|ac3|dts|dd5|ddp|5 1|7 1|10bit|yify|rarbg|eztv|tgx|eztvx)"
+    ).ok()?;
+    let s = tags.replace_all(&s, "").to_string();
+
+    // Strip release group suffixes in brackets [GalaxyTV] [EZTVx.to] etc
+    let bracket_re = regex_lite::Regex::new(r"\[.*?\]|\(.*?\)").ok()?;
+    let s = bracket_re.replace_all(&s, "").to_string();
+
+    // Collapse whitespace, trim, lowercase
+    let key: String = s.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase();
+
+    if key.is_empty() { None } else { Some(key) }
 }
 
 fn year_from_title(title: &str) -> Option<i64> {

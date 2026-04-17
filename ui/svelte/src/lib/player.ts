@@ -21,10 +21,29 @@ export function initPlyr() {
 export function getPlyr() { return plyr; }
 
 export function buildQueue(item: MediaItem, items: MediaItem[]) {
-  queue = [...items]
-    .filter(m => m.dir === item.dir)
-    .sort((a, b) => naturalSort(a.filename, b.filename));
+  // Group by series_key if available (cross-directory grouping for multi-season shows),
+  // otherwise fall back to exact directory match.
+  const grouped = item.series_key
+    ? items.filter(m => m.series_key === item.series_key)
+    : items.filter(m => m.dir === item.dir);
+
+  // Sort by episode marker (S01E01) then natural filename sort
+  queue = [...grouped].sort((a, b) => {
+    const epA = extractEpisodeKey(a.filename);
+    const epB = extractEpisodeKey(b.filename);
+    if (epA && epB) return epA.localeCompare(epB, undefined, { numeric: true, sensitivity: 'base' });
+    return naturalSort(a.filename, b.filename);
+  });
+
   queueIdx = queue.findIndex(m => m.id === item.id);
+}
+
+/// Extract a sortable episode key from filename, e.g. "S01E03" → "01 03"
+/// Falls back to full filename for natural sort.
+function extractEpisodeKey(filename: string): string | null {
+  const m = filename.match(/[Ss](\d{1,2})[Ee](\d{1,2})/);
+  if (m) return `${m[1].padStart(2,'0')} ${m[2].padStart(2,'0')}`;
+  return null;
 }
 
 export function openPlayer(item: MediaItem, allItems: MediaItem[], onUpNext: (next: MediaItem) => void, onClose?: () => void) {
